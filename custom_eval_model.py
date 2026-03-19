@@ -1,0 +1,37 @@
+import os
+from pydantic import BaseModel
+from deepeval.models.base_model import DeepEvalBaseLLM
+import requests
+
+class LocalOllamaModel(DeepEvalBaseLLM):
+    def __init__(self, model_name: str, url: str = "http://localhost:11434/api/generate"):
+        self.model_name = model_name
+        self.url = url
+
+    def load_model(self):
+        return self.model_name
+
+    def generate(self, prompt: str) -> str:
+        try:
+            response = requests.post(
+                self.url,
+                json={
+                    "model": self.model_name,
+                    "prompt": prompt,
+                    "stream": False
+                },
+                timeout=120
+            )
+            response.raise_for_status()
+            result = response.json()
+            return result.get("response", "")
+        except Exception as e:
+            print(f"Error calling Ollama: {e}")
+            return ""
+
+    async def a_generate(self, prompt: str) -> str:
+        # For simplicity, fallback to synchronous generate
+        return self.generate(prompt)
+
+    def get_model_name(self):
+        return self.model_name
