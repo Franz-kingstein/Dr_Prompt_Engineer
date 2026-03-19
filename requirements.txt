@@ -76,6 +76,7 @@ griffecli==2.0.0
 griffelib==2.0.0
 grpcio==1.78.0
 grpcio-reflection==1.78.0
+feast==0.61.0
 guardrails-ai==0.9.2
 guardrails-api-client==0.4.0
 guardrails_hub_types==0.0.4
