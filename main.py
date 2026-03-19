@@ -7,6 +7,8 @@ from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTEN
 from custom_eval_model import LocalOllamaModel
 from deepeval.metrics import HallucinationMetric, AnswerRelevancyMetric
 from deepeval.test_case import LLMTestCase
+from feast import FeatureStore
+import os
 
 # -----------------------------
 # 🔥 MLflow Setup
@@ -33,6 +35,11 @@ REQUEST_STATUS = Counter(
     "prompt_gen_status_total",
     "Total count of requests by status",
     ["status"]
+)
+
+FEAST_RETRIEVAL_ERRORS = Counter(
+    "prompt_gen_feast_retrieval_errors_total",
+    "Total errors retrieving features from Feast"
 )
 
 VALIDATION_FAILURES = Counter(
@@ -89,12 +96,22 @@ RELEVANCE_THRESHOLD = 0.5
 app = FastAPI()
 OLLAMA_URL = "http://localhost:11434/api/generate"
 
+# Feast Initialization
+FEAST_REPO_PATH = os.path.join(os.getcwd(), "feature_repo/feature_repo")
+try:
+    fs = FeatureStore(repo_path=FEAST_REPO_PATH)
+    print("✅ Feast Feature Store connected")
+except Exception as e:
+    print(f"❌ Feast initialization error: {e}")
+    fs = None
+
 # -----------------------------
 # Request Schema
 # -----------------------------
 class RequestBody(BaseModel):
     task: str
     user_input: str
+    user_id: int = 1001  # Default test user
     format_type: str = "structured"  # structured | unstructured | json
     cot: bool = False
 
@@ -117,54 +134,58 @@ def get_framework(task):
 # Prompt Generator
 # -----------------------------
 @mlflow.trace
-def generate_prompt(task, user_input, cot=False):
+def generate_prompt(task, user_input, cot=False, user_metadata=None):
+    # Base prompt construction with potential Feast metadata
+    persona_suffix = ""
+    if user_metadata:
+        expertise = user_metadata.get("expertise_level", "Professional")
+        lang = user_metadata.get("preferred_language", "multilingual")
+        persona_suffix = f" You are a {expertise} level expert, focusing on {lang} best practices."
 
     if task == "code":
         prompt = f"""
-You are an expert software engineer.
-
-Follow STRICT RACE format:
-Role:
-Action:
-Context:
-Explanation:
+You are an expert software engineer.{persona_suffix}
+Your task is to generate a high-quality coding prompt based on the user's input.
+STRICT RACE format:
+Role: <Persona>
+Action: <Coding task>
+Context: <Environment, libraries, constraints>
+Explanation: <Logic behind the code>
 
 Task: {user_input}
 """
-
     elif task == "image":
         prompt = f"""
-You are an expert prompt engineer.
-
-Follow STRICT CARE format:
-Context:
-Action:
-Result:
-Example:
+You are an expert prompt engineer.{persona_suffix}
+Generate a detailed image generation prompt (e.g., Midjourney/DALL-E).
+STRICT CARE format:
+Context: <Lighting, style, camera>
+Action: <Main subject activity>
+Result: <Visual outcome>
+Example: <Short sample prompt string>
 
 Task: {user_input}
 """
-
     elif task == "document":
         prompt = f"""
-You are a research assistant.
-
-Follow STRICT POST format:
-Persona:
-Observation:
-Scenario:
-Task:
+You are a research assistant.{persona_suffix}
+Generate a structured document creation prompt.
+STRICT POST format:
+Persona: <Writer's role>
+Observation: <Current situation or background>
+Scenario: <Exact problem being solved>
+Task: <Directives for the AI>
 
 Input: {user_input}
 """
-
     else:
-        prompt = user_input
+        prompt = f"System: Generate a prompt for: {user_input}"
 
     if cot:
         prompt += "\nThink step by step."
 
     return prompt
+
 
 
 # -----------------------------
@@ -362,13 +383,38 @@ def generate(req: RequestBody):
     final_output = None
     validation = {"valid": False, "issues": ["Initial"]}
     framework = get_framework(req.task)
+    
+    # -----------------------------
+    # 🍴 Feast Feature Retrieval
+    # -----------------------------
+    user_metadata = {}
+    if fs:
+        try:
+            feature_vector = fs.get_online_features(
+                features=[
+                    "user_features:expertise_level",
+                    "user_features:preferred_language"
+                ],
+                entity_rows=[{"user_id": req.user_id}]
+            ).to_dict()
+            
+            user_metadata = {
+                "expertise_level": feature_vector.get("expertise_level", [None])[0],
+                "preferred_language": feature_vector.get("preferred_language", [None])[0]
+            }
+            print(f"🍴 Retrieved Feast metadata for user {req.user_id}: {user_metadata}")
+        except Exception as e:
+            print(f"⚠️ Feast retrieval failed: {e}")
+            FEAST_RETRIEVAL_ERRORS.inc()
+
     start_time = time.time()
 
     with REQUEST_LATENCY.labels(task=req.task).time():
 
         while retries_used < max_retries:
             
-            prompt = generate_prompt(req.task, req.user_input, req.cot)
+            prompt = generate_prompt(req.task, req.user_input, cot=req.cot, user_metadata=user_metadata)
+
 
             try:
                 with mlflow.start_span(name=f"ollama_llm_call_attempt_{retries_used + 1}") as span:
