@@ -1,14 +1,18 @@
-from fastapi import FastAPI, Response
-from pydantic import BaseModel
 import requests
+import httpx
+import asyncio
 import time
 import mlflow
+from fastapi import FastAPI, Response, BackgroundTasks
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
 from custom_eval_model import LocalOllamaModel
 from deepeval.metrics import HallucinationMetric, AnswerRelevancyMetric
 from deepeval.test_case import LLMTestCase
 from feast import FeatureStore
 import os
+import re
 
 # -----------------------------
 # 🔥 MLflow Setup
@@ -94,6 +98,15 @@ RELEVANCE_THRESHOLD = 0.5
 # App Init
 # -----------------------------
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
+
 OLLAMA_URL = "http://localhost:11434/api/generate"
 
 # Feast Initialization
@@ -114,6 +127,8 @@ class RequestBody(BaseModel):
     user_id: int = 1001  # Default test user
     format_type: str = "structured"  # structured | unstructured | json
     cot: bool = False
+    refinement_instructions: str = ""  # New: instructions for refinement
+    previous_prompt: str = ""          # New: the prompt being refined
 
 
 # -----------------------------
@@ -130,17 +145,55 @@ def get_framework(task):
     return "UNKNOWN"
 
 
+@mlflow.trace
+def get_framework_format(framework):
+    if framework == "RACE":
+        return "Role: <Persona>\nAction: <Coding task>\nContext: <Environment, libraries, constraints>\nExplanation: <Logic behind the code>"
+    elif framework == "CARE":
+        return "Context: <Lighting, style, camera>\nAction: <Main subject activity>\nResult: <Visual outcome>\nExample: <Short sample prompt string>"
+    elif framework == "POST":
+        return "Persona: <Writer's role>\nObservation: <Current situation or background>\nScenario: <Exact problem being solved>\nTask: <Directives for the AI>"
+    return ""
+
+
 # -----------------------------
 # Prompt Generator
 # -----------------------------
 @mlflow.trace
-def generate_prompt(task, user_input, cot=False, user_metadata=None):
+def generate_prompt(task, user_input, cot=False, user_metadata=None, refinement_instructions="", previous_prompt=""):
     # Base prompt construction with potential Feast metadata
-    persona_suffix = ""
+    expertise = "Professional"
+    lang = "multilingual"
     if user_metadata:
-        expertise = user_metadata.get("expertise_level", "Professional")
-        lang = user_metadata.get("preferred_language", "multilingual")
+        expertise = user_metadata.get("expertise_level", "Professional") or "Professional"
+        lang = user_metadata.get("preferred_language", "multilingual") or "multilingual"
+    
+    if task == "code":
         persona_suffix = f" You are a {expertise} level expert, focusing on {lang} best practices."
+    else:
+        persona_suffix = f" You are a {expertise} level expert."
+
+    # --- REFINEMENT MODE ---
+    if previous_prompt and refinement_instructions:
+        framework = get_framework(task)
+        return f"""
+You are an expert prompt engineer.{persona_suffix}
+The user wants to refine an existing prompt.
+
+PREVIOUS PROMPT:
+{previous_prompt}
+
+USER REFINEMENT INSTRUCTIONS:
+{refinement_instructions}
+
+YOUR TASK:
+Regenerate the prompt incorporating the user's instructions.
+Keep the result in the STRICT {framework} format.
+NO conversational filler.
+
+STRICT {framework} format:
+{get_framework_format(framework)}
+"""
 
     if task == "code":
         prompt = f"""
@@ -158,6 +211,7 @@ Task: {user_input}
         prompt = f"""
 You are an expert prompt engineer.{persona_suffix}
 Generate a detailed image generation prompt (e.g., Midjourney/DALL-E).
+DO NOT include any code or programming language references unless specifically requested.
 STRICT CARE format:
 Context: <Lighting, style, camera>
 Action: <Main subject activity>
@@ -191,9 +245,40 @@ Input: {user_input}
 # -----------------------------
 # Output Processing
 # -----------------------------
-def clean_output(text):
+def clean_output(text, framework=None):
+    if not framework:
+        return text
+
+    # Map frameworks to their required keys (without colons for easier fuzzy matching)
+    header_map = {
+        "RACE": ["Role", "Action", "Context", "Explanation"],
+        "CARE": ["Context", "Action", "Result", "Example"],
+        "POST": ["Persona", "Observation", "Scenario", "Task"]
+    }
+    
+    required_keys = header_map.get(framework, [])
     lines = text.split("\n")
-    structured = [line for line in lines if ":" in line]
+    structured = []
+    
+    for line in lines:
+        stripped_line = line.strip()
+        # Handle list markers (1., -, *), markdown bold (e.g., **Role:**) or plain (Role:)
+        # We look for something that looks like "[optional list/mark] Key [optional marks] : (Value)"
+        for key in required_keys:
+            # Pattern: [non-word or digit]* Key [non-word]* : (Value)
+            pattern = rf"^[^\w]*\d*\.?\W*({key})\W*:(.*)"
+            match = re.search(pattern, stripped_line, re.IGNORECASE)
+            if match:
+                # Standardize to "Key: Value"
+                clean_key = match.group(1).capitalize()
+                val_raw = match.group(2).strip()
+                # Only strip common markdown decorators like *, _, ~, and whitespace
+                value = re.sub(r"^[*_~\s]+", "", val_raw)
+                value = re.sub(r"[*_~\s]+$", "", value).strip()
+                
+                structured.append(f"{clean_key}: {value}")
+                break 
+    
     return "\n".join(structured)
 
 
@@ -207,9 +292,25 @@ def to_json_format(text):
 
 
 # -----------------------------
-# 🔥 Dynamic Toxicity Check (LLM-as-a-Judge)
+# 🔥 Dynamic Toxicity Check (Fast + LLM-as-a-Judge)
 # -----------------------------
-def dynamic_toxicity_check(text):
+TOXIC_KEYWORDS = [
+    r"hate speech", r"violence", r"illegal", r"harmful", r"sexual content",
+    r"discriminatory", r"offensive", r"harassment"
+]
+
+def fast_toxicity_check(text):
+    """Simple regex based check to catch obvious toxicity."""
+    for pattern in TOXIC_KEYWORDS:
+        if re.search(pattern, text, re.IGNORECASE):
+            return False, f"Fast-path detection: {pattern}"
+    return True, "Clean"
+
+async def dynamic_toxicity_check(text):
+    # Try fast check first
+    is_safe, reason = fast_toxicity_check(text)
+    if not is_safe:
+        return False, reason
 
     moderation_prompt = f"""
 You are a strict AI safety moderator.
@@ -225,22 +326,23 @@ Reason: <short explanation>
 """
 
     try:
-        response = requests.post(
-            OLLAMA_URL,
-            json={
-                "model": "phi3",
-                "prompt": moderation_prompt,
-                "stream": False
-            },
-            timeout=60
-        )
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                OLLAMA_URL,
+                json={
+                    "model": "phi3",
+                    "prompt": moderation_prompt,
+                    "stream": False
+                },
+                timeout=60
+            )
+            response.raise_for_status()
+            result = response.json()
+            output = result.get("response", "").lower()
 
-        result = response.json()
-        output = result.get("response", "").lower()
-
-        if "yes" in output:
-            return False, output
-        return True, output
+            if "yes" in output:
+                return False, output
+            return True, output
 
     except Exception as e:
         return True, f"moderation_error: {str(e)}"
@@ -249,7 +351,7 @@ Reason: <short explanation>
 # -----------------------------
 # 🧠 Guardrails Validation
 # -----------------------------
-def validate_output(output_text, framework, user_input=None, prompt_context=None):
+async def validate_output(output_text, framework, user_input=None, prompt_context=None):
 
     validation = {
         "valid": True,
@@ -258,7 +360,7 @@ def validate_output(output_text, framework, user_input=None, prompt_context=None
     }
 
     # --- STEP 1: 🔥 Toxicity Check ---
-    is_safe, reason = dynamic_toxicity_check(output_text)
+    is_safe, reason = await dynamic_toxicity_check(output_text)
     if not is_safe:
         validation["valid"] = False
         validation["issues"].append("Toxic content detected")
@@ -291,29 +393,32 @@ def validate_output(output_text, framework, user_input=None, prompt_context=None
             context=[prompt_context]
         )
 
-        # Relevancy Check
         relevancy_metric = AnswerRelevancyMetric(threshold=RELEVANCE_THRESHOLD, model=eval_model, include_reason=True)
-        try:
-            relevancy_metric.measure(test_case)
-            validation["scores"]["relevancy"] = relevancy_metric.score
-            if not relevancy_metric.is_successful():
-                validation["valid"] = False
-                validation["issues"].append(f"Low Relevance Score: {relevancy_metric.score:.2f}")
-                validation["relevance_reason"] = relevancy_metric.reason
-        except Exception as e:
-            print(f"DeepEval Relevancy Error: {e}")
-
-        # Hallucination Check
         hallucination_metric = HallucinationMetric(threshold=HALLUCINATION_THRESHOLD, model=eval_model, include_reason=True)
-        try:
-            hallucination_metric.measure(test_case)
-            validation["scores"]["hallucination"] = hallucination_metric.score
-            if not hallucination_metric.is_successful():
-                validation["valid"] = False
-                validation["issues"].append("Hallucination detected")
-                validation["hallucination_reason"] = hallucination_metric.reason
-        except Exception as e:
-            print(f"DeepEval Hallucination Error: {e}")
+
+        async def run_relevancy():
+            try:
+                await relevancy_metric.a_measure(test_case)
+                validation["scores"]["relevancy"] = relevancy_metric.score
+                if not relevancy_metric.is_successful():
+                    validation["valid"] = False
+                    validation["issues"].append(f"Low Relevance Score: {relevancy_metric.score:.2f}")
+                    validation["relevance_reason"] = relevancy_metric.reason
+            except Exception as e:
+                print(f"DeepEval Relevancy Error: {e}")
+
+        async def run_hallucination():
+            try:
+                await hallucination_metric.a_measure(test_case)
+                validation["scores"]["hallucination"] = hallucination_metric.score
+                if not hallucination_metric.is_successful():
+                    validation["valid"] = False
+                    validation["issues"].append("Hallucination detected")
+                    validation["hallucination_reason"] = hallucination_metric.reason
+            except Exception as e:
+                print(f"DeepEval Hallucination Error: {e}")
+
+        await asyncio.gather(run_relevancy(), run_hallucination())
 
     return validation
 
@@ -373,7 +478,7 @@ def run_evaluations(input_text, actual_output, context):
 # -----------------------------
 @app.post("/generate")
 @mlflow.trace(name="prompt_gen_pipeline")
-def generate(req: RequestBody):
+async def generate(req: RequestBody, background_tasks: BackgroundTasks):
 
     REQUEST_COUNT.labels(task=req.task).inc()
 
@@ -408,61 +513,73 @@ def generate(req: RequestBody):
             FEAST_RETRIEVAL_ERRORS.inc()
 
     start_time = time.time()
+    prompt = "" # Initialize prompt
 
     with REQUEST_LATENCY.labels(task=req.task).time():
 
         while retries_used < max_retries:
             
-            prompt = generate_prompt(req.task, req.user_input, cot=req.cot, user_metadata=user_metadata)
-
+            prompt = generate_prompt(
+                req.task, 
+                req.user_input, 
+                cot=req.cot, 
+                user_metadata=user_metadata,
+                refinement_instructions=req.refinement_instructions,
+                previous_prompt=req.previous_prompt
+            )
 
             try:
+                # MLflow tracing in async context might need care, but using span as context manager is fine if it doesn't block
                 with mlflow.start_span(name=f"ollama_llm_call_attempt_{retries_used + 1}") as span:
                     span.set_attribute("model", "phi3")
                     span.set_attribute("attempt", retries_used + 1)
 
-                    response = requests.post(
-                        OLLAMA_URL,
-                        json={
-                            "model": "phi3",
-                            "prompt": prompt,
-                            "stream": False
-                        },
-                        timeout=120
-                    )
+                    async with httpx.AsyncClient() as client:
+                        response = await client.post(
+                            OLLAMA_URL,
+                            json={
+                                "model": "phi3",
+                                "prompt": prompt,
+                                "stream": False
+                            },
+                            timeout=120
+                        )
 
-                    response.raise_for_status()
-                    result = response.json()
-                    raw_output = result.get("response", "")
-                    status = "success"
-                    span.set_attribute("status", status)
+                        response.raise_for_status()
+                        result = response.json()
+                        raw_output = result.get("response", "")
+                        status = "success"
+                        span.set_attribute("status", status)
 
             except Exception as e:
                 raw_output = str(e)
                 status = "failed"
 
             # -----------------------------
-            # Output Formatting
-            # -----------------------------
-            if req.format_type == "structured":
-                final_output = clean_output(raw_output)
-            elif req.format_type == "json":
-                final_output = to_json_format(clean_output(raw_output))
-            else:
-                final_output = raw_output
-
-            # -----------------------------
             # 🔥 Guardrails Validation
             # -----------------------------
-            validation = validate_output(
-                str(final_output), 
+            # Always validate the structured text version for better consistency
+            cleaned_text = clean_output(raw_output, framework=framework)
+            
+            # If requesting unstructured, we validate raw; otherwise we validate cleaned
+            validate_input = cleaned_text if req.format_type in ["structured", "json"] else raw_output
+
+            validation = await validate_output(
+                validate_input, 
                 framework, 
                 user_input=req.user_input, 
                 prompt_context=prompt
             )
 
             if validation["valid"]:
-                break  # SUCCESS - Exit retry loop
+                # Success - Format the final output
+                if req.format_type == "structured":
+                    final_output = cleaned_text
+                elif req.format_type == "json":
+                    final_output = to_json_format(cleaned_text)
+                else:
+                    final_output = raw_output
+                break  # Exit retry loop
             
             # If invalid, record and retry
             retries_used += 1
@@ -509,29 +626,29 @@ def generate(req: RequestBody):
 
 
         # -----------------------------
-        # 🔥 MLflow Logging
+        # 🔥 MLflow Logging (Background)
         # -----------------------------
-        with mlflow.start_run():
-            mlflow.log_param("task", req.task)
-            mlflow.log_param("framework", framework)
-            mlflow.log_param("format_type", req.format_type)
-            mlflow.log_param("status", status)
-            mlflow.log_param("validation_passed", validation["valid"])
-            mlflow.log_param("retries_used", retries_used)
+        def log_to_mlflow():
+            with mlflow.start_run():
+                mlflow.log_param("task", req.task)
+                mlflow.log_param("framework", framework)
+                mlflow.log_param("format_type", req.format_type)
+                mlflow.log_param("status", status)
+                mlflow.log_param("validation_passed", validation["valid"])
+                mlflow.log_param("retries_used", retries_used)
+                mlflow.log_metric("latency", latency)
+                mlflow.log_text(prompt, "generated_prompt.txt")
+                mlflow.log_text(str(final_output), "final_output.txt")
+                mlflow.log_text(str(validation), "validation_report.txt")
+                if eval_scores:
+                    mlflow.log_metrics({
+                        "eval_hallucination": eval_scores.get("hallucination", 0),
+                        "eval_relevancy": eval_scores.get("relevancy", 0),
+                        "eval_correctness": eval_scores.get("answer_correctness", 0)
+                    })
+                    mlflow.log_text(str(eval_reasons), "evaluation_reasons.txt")
 
-            mlflow.log_metric("latency", latency)
-
-            mlflow.log_text(prompt, "generated_prompt.txt")
-            mlflow.log_text(str(final_output), "final_output.txt")
-            mlflow.log_text(str(validation), "validation_report.txt")
-            
-            if eval_scores:
-                mlflow.log_metrics({
-                    "eval_hallucination": eval_scores.get("hallucination", 0),
-                    "eval_relevancy": eval_scores.get("relevancy", 0),
-                    "eval_correctness": eval_scores.get("answer_correctness", 0)
-                })
-                mlflow.log_text(str(eval_reasons), "evaluation_reasons.txt")
+        background_tasks.add_task(log_to_mlflow)
 
         return {
             "status": status,

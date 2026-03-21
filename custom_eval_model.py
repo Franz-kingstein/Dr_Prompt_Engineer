@@ -30,8 +30,24 @@ class LocalOllamaModel(DeepEvalBaseLLM):
             return ""
 
     async def a_generate(self, prompt: str) -> str:
-        # For simplicity, fallback to synchronous generate
-        return self.generate(prompt)
+        import httpx
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    self.url,
+                    json={
+                        "model": self.model_name,
+                        "prompt": prompt,
+                        "stream": False
+                    },
+                    timeout=120
+                )
+                response.raise_for_status()
+                result = response.json()
+                return result.get("response", "")
+        except Exception as e:
+            print(f"Error calling Ollama (async): {e}")
+            return ""
 
     def get_model_name(self):
         return self.model_name
