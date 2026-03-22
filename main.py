@@ -618,37 +618,63 @@ async def generate(req: RequestBody, background_tasks: BackgroundTasks):
                     span.set_attribute("attempt", retries_used + 1)
 
                     current_url = get_ollama_url()
+                    span.set_attribute("url", current_url)
 
-                    # Build headers — add ngrok bypass header when in ngrok mode
-                    # (free-tier ngrok shows an HTML warning page without this)
-                    request_headers = {
-                        "Content-Type": "application/json",
-                        "ngrok-skip-browser-warning": "true",
-                        "User-Agent": "DrPromptAPI/1.0"
-                    }
-
-                    async with httpx.AsyncClient() as client:
-                        response = await client.post(
-                            current_url,
-                            json={
-                                "model": DEFAULT_MODEL,
-                                "prompt": prompt,
-                                "stream": False
-                            },
-                            headers=request_headers,
-                            timeout=120
+                    # ── Path A: API mode (OpenAI / Groq chat completions) ──
+                    if OLLAMA_MODE == "api":
+                        api_key = (
+                            os.getenv("OPENAI_API_KEY") or
+                            os.getenv("GROQ_API_KEY") or ""
                         )
+                        request_headers = {
+                            "Content-Type": "application/json",
+                            "Authorization": f"Bearer {api_key}"
+                        }
+                        payload = {
+                            "model": DEFAULT_MODEL,
+                            "messages": [{"role": "user", "content": prompt}],
+                            "temperature": 0.7
+                        }
+                        async with httpx.AsyncClient() as client:
+                            response = await client.post(
+                                current_url, json=payload,
+                                headers=request_headers, timeout=120
+                            )
+                            response.raise_for_status()
+                            result = response.json()
+                            raw_output = result["choices"][0]["message"]["content"]
 
-                        response.raise_for_status()
-                        result = response.json()
-                        raw_output = result.get("response", "")
-                        status = "success"
-                        span.set_attribute("status", status)
-                        print(f"✅ LLM response received ({len(raw_output)} chars)")
+                    # ── Path B: Ollama format (ngrok / local) ──
+                    else:
+                        request_headers = {
+                            "Content-Type": "application/json",
+                            "ngrok-skip-browser-warning": "true",
+                            "User-Agent": "DrPromptAPI/1.0"
+                        }
+                        payload = {
+                            "model": DEFAULT_MODEL,
+                            "prompt": prompt,
+                            "stream": False
+                        }
+                        async with httpx.AsyncClient() as client:
+                            response = await client.post(
+                                current_url, json=payload,
+                                headers=request_headers, timeout=120
+                            )
+                            response.raise_for_status()
+                            result = response.json()
+                            raw_output = result.get("response", "")
+
+                    status = "success"
+                    span.set_attribute("status", "success")
+                    print(f"✅ LLM response received ({len(raw_output)} chars)")
 
             except Exception as e:
+                # Print the REAL error so it's visible in Render logs
+                print(f"❌ LLM call failed (attempt {retries_used + 1}): {type(e).__name__}: {e}")
                 raw_output = str(e)
                 status = "failed"
+
 
             # -----------------------------
             # 🔥 Guardrails Validation
