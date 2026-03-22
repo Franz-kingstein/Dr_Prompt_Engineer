@@ -410,11 +410,14 @@ const App = () => {
         <div className="flex items-center gap-2">
           <button
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            className="lg:hidden p-2 text-on-surface-variant hover:text-primary transition-colors"
+            className="lg:hidden p-3 -ml-2 text-on-surface hover:text-primary transition-colors flex items-center justify-center z-[60]"
+            aria-label="Toggle Menu"
           >
-            <span className="material-symbols-outlined text-2xl">
-              {isMobileMenuOpen ? 'close' : 'menu'}
-            </span>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="3" y1="12" x2="21" y2="12"></line>
+              <line x1="3" y1="6" x2="21" y2="6"></line>
+              <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
           </button>
           <span className="material-symbols-outlined text-on-surface/40 text-2xl md:text-3xl" style={{ fontVariationSettings: "'FILL' 1" }}>memory</span>
           <span className="text-xl md:text-2xl font-black text-on-surface uppercase tracking-tighter">Dr. <span className="text-on-surface-variant opacity-60">Prompt</span></span>
