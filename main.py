@@ -11,6 +11,7 @@ from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTEN
 from custom_eval_model import LocalOllamaModel
 from deepeval.metrics import HallucinationMetric, AnswerRelevancyMetric
 from deepeval.test_case import LLMTestCase
+import deepeval
 from feast import FeatureStore
 import os
 import re
@@ -194,7 +195,14 @@ EVAL_CORRECTNESS = Gauge(
 # -----------------------------
 # DeepEval Init
 # -----------------------------
-eval_model = LocalOllamaModel(model_name="phi3")
+if os.getenv("DEEPEVAL_API_KEY"):
+    try:
+        deepeval.login(api_key=os.getenv("DEEPEVAL_API_KEY"))
+        print("✅ DeepEval (Confident AI) logged in")
+    except Exception as e:
+        print(f"⚠️ DeepEval login failed: {e}")
+
+eval_model = LocalOllamaModel(model_name=DEFAULT_MODEL, url=get_ollama_url())
 HALLUCINATION_THRESHOLD = 0.5
 RELEVANCE_THRESHOLD = 0.5
 
@@ -542,7 +550,7 @@ async def validate_output(output_text, framework, user_input=None, prompt_contex
 
         await asyncio.gather(run_relevancy(), run_hallucination())
 
-    return validation
+    return validation, relevancy_metric, hallucination_metric
 
 
 
@@ -683,7 +691,7 @@ async def generate(req: RequestBody, background_tasks: BackgroundTasks):
             # If requesting unstructured, we validate raw; otherwise we validate cleaned
             validate_input = cleaned_text if req.format_type in ["structured", "json"] else raw_output
 
-            validation = await validate_output(
+            validation, relevancy_metric, hallucination_metric = await validate_output(
                 validate_input, 
                 framework, 
                 user_input=req.user_input, 
@@ -742,6 +750,21 @@ async def generate(req: RequestBody, background_tasks: BackgroundTasks):
             pseudo_correctness = (1.0 - eval_scores.get("hallucination", 0)) * eval_scores.get("relevancy", 0)
             EVAL_CORRECTNESS.labels(task=req.task).set(pseudo_correctness)
             eval_scores["answer_correctness"] = pseudo_correctness
+
+            # --- STEP 4: 🚀 Track in Confident AI (Dashboard Upload) ---
+            if os.getenv("DEEPEVAL_API_KEY"):
+                try:
+                    deepeval.track(
+                        event_name=f"prompt_gen_{req.task}",
+                        model=DEFAULT_MODEL,
+                        input=req.user_input,
+                        actual_output=raw_output,
+                        retrieval_context=[prompt],
+                        metrics=[relevancy_metric, hallucination_metric]
+                    )
+                    print(f"🚀 DeepEval Event tracked: prompt_gen_{req.task}")
+                except Exception as e:
+                    print(f"⚠️ DeepEval track failed: {e}")
 
 
         # -----------------------------

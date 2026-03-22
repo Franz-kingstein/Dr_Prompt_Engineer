@@ -7,6 +7,12 @@ class LocalOllamaModel(DeepEvalBaseLLM):
     def __init__(self, model_name: str, url: str = "http://localhost:11434/api/generate"):
         self.model_name = model_name
         self.url = url
+        # Define standard headers for ngrok/cloud connection
+        self.headers = {
+            "Content-Type": "application/json",
+            "ngrok-skip-browser-warning": "true",
+            "User-Agent": "DrPromptEval/1.0"
+        }
 
     def load_model(self):
         return self.model_name
@@ -20,13 +26,14 @@ class LocalOllamaModel(DeepEvalBaseLLM):
                     "prompt": prompt,
                     "stream": False
                 },
+                headers=self.headers,
                 timeout=120
             )
             response.raise_for_status()
             result = response.json()
             return result.get("response", "")
         except Exception as e:
-            print(f"Error calling Ollama: {e}")
+            print(f"Error calling LLM for eval: {e}")
             return ""
 
     async def a_generate(self, prompt: str) -> str:
@@ -40,13 +47,14 @@ class LocalOllamaModel(DeepEvalBaseLLM):
                         "prompt": prompt,
                         "stream": False
                     },
+                    headers=self.headers,
                     timeout=120
                 )
                 response.raise_for_status()
                 result = response.json()
                 return result.get("response", "")
         except Exception as e:
-            print(f"Error calling Ollama (async): {e}")
+            print(f"Error calling LLM for eval (async): {e}")
             return ""
 
     def get_model_name(self):
