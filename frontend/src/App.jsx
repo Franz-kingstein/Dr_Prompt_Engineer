@@ -211,13 +211,13 @@ const ConnectionErrorPopup = ({ onRetry, onSupport }) => (
       </h2>
 
       <p className="text-on-surface-variant text-sm mb-8 leading-relaxed">
-        The engine is currently offline. <span className="text-primary font-bold">Retrying in 5 seconds...</span>
+        The engine is experiencing high latency or is temporarily offline.
       </p>
 
       <div className="space-y-4">
         <button
           onClick={onRetry}
-          className="w-full py-4 bg-primary text-on-primary font-black uppercase tracking-widest text-sm rounded-2xl glow-orange hover:bg-primary-dim transition-all active:scale-95 nm-convex"
+          className="w-full py-4 bg-primary text-on-primary font-black uppercase tracking-widest text-sm rounded-2xl glow-orange hover:bg-primary-dim transition-all active:scale-95 nm-convex disabled:opacity-50"
         >
           Retry Connection
         </button>
@@ -351,28 +351,38 @@ const App = () => {
       });
 
       const data = await resp.json();
-      let outputText = data.output || "Error generating response.";
 
-      // If the output is a JSON object, stringify it for the Markdown renderer
-      if (typeof outputText === 'object' && outputText !== null) {
-        outputText = `\`\`\`json\n${JSON.stringify(outputText, null, 2)}\n\`\`\``;
+      if (data.status === 'success') {
+        let outputText = data.output || "Error generating response.";
+
+        // If the output is a JSON object, stringify it
+        if (typeof outputText === 'object' && outputText !== null) {
+          outputText = `\`\`\`json\n${JSON.stringify(outputText, null, 2)}\n\`\`\``;
+        }
+
+        const newMsg = {
+          id: Date.now(),
+          text: outputText,
+          type: isRefinement ? "Refined Output" : "Engine Generated",
+          icon: isRefinement ? "auto_fix_high" : "auto_awesome",
+          color: isRefinement ? "tertiary" : "primary",
+          params: data.evaluations?.status === "processing"
+            ? { Quality: "Syncing...", Latency: `${(data.latency || 0).toFixed(2)}s` }
+            : (data.evaluations || { Engine: "FastAPI", Model: "DeepMind v4" }),
+          notes: data.evaluations?.status === "processing"
+            ? "Prompt generated. Quality metrics are being finalized in the background."
+            : (isRefinement ? "Iteration completed based on user feedback." : "Architecture generated based on real-time context injection.")
+        };
+
+        setMessages([newMsg, ...messages]);
+        if (!isRefinement) setInput('');
+        setStatusNote('Neural Sync Complete');
+      } else {
+        throw new Error(data.message || 'Generation failed');
       }
 
-      const newMsg = {
-        id: Date.now(),
-        text: outputText,
-        type: isRefinement ? "Refined Output" : "Engine Generated",
-        icon: isRefinement ? "auto_fix_high" : "auto_awesome",
-        color: isRefinement ? "tertiary" : "primary",
-        params: data.evaluations || { Engine: "FastAPI", Model: "DeepMind v4" },
-        notes: isRefinement ? "Iteration completed based on user feedback." : "Architecture generated based on real-time Feast feature ingestion and context injection."
-      };
-
-      setMessages([newMsg, ...messages]);
-      if (!isRefinement) setInput('');
-      setStatusNote('');
-
     } catch (err) {
+      console.error('Generation Error:', err);
       setShowError(true);
     } finally {
       setLoading(false);
