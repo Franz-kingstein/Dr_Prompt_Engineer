@@ -183,3 +183,12 @@ body {
   text-transform: uppercase;
   letter-spacing: -0.025em;
 }
+
+/* Mobile Drawer Overlay */
+.drawer-overlay {
+  background-color: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  position: fixed;
+  inset: 0;
+  z-index: 35;
+}

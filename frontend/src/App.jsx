@@ -301,6 +301,7 @@ const App = () => {
   const [formatType, setFormatType] = useState('structured'); // structured | json
   const [statusNote, setStatusNote] = useState(''); // Live backend feedback
   const [layoutView, setLayoutView] = useState('list'); // grid | list
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     // Simulate Neural Sync/Initial Loading Sequence
@@ -405,12 +406,20 @@ const App = () => {
     <div className="bg-surface text-on-surface font-body min-h-screen">
 
       {/* TopNavBar */}
-      <header className="bg-surface/95 backdrop-blur-md flex justify-between items-center w-full px-10 h-20 fixed top-0 z-50 border-b border-white/[0.03]">
+      <header className="bg-surface/95 backdrop-blur-md flex justify-between items-center w-full px-4 md:px-10 h-20 fixed top-0 z-50 border-b border-white/[0.03]">
         <div className="flex items-center gap-2">
-          <span className="material-symbols-outlined text-on-surface/40 text-3xl" style={{ fontVariationSettings: "'FILL' 1" }}>memory</span>
-          <span className="text-2xl font-black text-on-surface uppercase tracking-tighter">Dr. <span className="text-on-surface-variant opacity-60">Prompt</span></span>
+          <button
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            className="lg:hidden p-2 text-on-surface-variant hover:text-primary transition-colors"
+          >
+            <span className="material-symbols-outlined text-2xl">
+              {isMobileMenuOpen ? 'close' : 'menu'}
+            </span>
+          </button>
+          <span className="material-symbols-outlined text-on-surface/40 text-2xl md:text-3xl" style={{ fontVariationSettings: "'FILL' 1" }}>memory</span>
+          <span className="text-xl md:text-2xl font-black text-on-surface uppercase tracking-tighter">Dr. <span className="text-on-surface-variant opacity-60">Prompt</span></span>
         </div>
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-3 md:gap-6">
           <div className="hidden md:flex gap-8 text-[#adaaaa] font-inter text-sm font-medium">
             <a className="text-on-surface font-bold transition-all hover:text-primary px-2" href="#" onClick={(e) => { e.preventDefault(); }}>
               Workshop
@@ -425,17 +434,17 @@ const App = () => {
               Settings
             </a>
           </div>
-          <div className="flex items-center gap-4">
-            <span className="material-symbols-outlined text-on-surface-variant cursor-pointer hover:text-primary transition-colors text-2xl">help_outline</span>
-            <div className="w-10 h-10 rounded-full bg-surface-container-high border border-primary/20 flex items-center justify-center cursor-pointer hover:scale-110 transition-transform">
-              <span className="material-symbols-outlined text-primary text-2xl">account_circle</span>
+          <div className="flex items-center gap-2 md:gap-4">
+            <span className="material-symbols-outlined text-on-surface-variant cursor-pointer hover:text-primary transition-colors text-xl md:text-2xl">help_outline</span>
+            <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-surface-container-high border border-primary/20 flex items-center justify-center cursor-pointer hover:scale-110 transition-transform">
+              <span className="material-symbols-outlined text-primary text-xl md:text-2xl">account_circle</span>
             </div>
           </div>
         </div>
       </header>
 
-      {/* SideNavBar */}
-      <aside className="fixed left-0 top-0 h-full w-72 bg-surface/50 backdrop-blur-3xl pt-24 pb-8 px-6 flex-col border-r border-white/[0.03] z-40 hidden lg:flex">
+      {/* SideNavBar - Responsive Drawer */}
+      <aside className={`fixed left-0 top-0 h-full w-72 bg-surface/95 lg:bg-surface/50 backdrop-blur-3xl pt-24 pb-8 px-6 flex flex-col border-r border-white/[0.03] z-40 transition-transform duration-300 lg:translate-x-0 ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="mb-8 px-4">
           <h2 className="text-xl font-black text-primary uppercase tracking-tighter flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
@@ -479,19 +488,27 @@ const App = () => {
         </div>
       </aside>
 
+      {/* Mobile Drawer Overlay */}
+      {isMobileMenuOpen && (
+        <div
+          className="drawer-overlay lg:hidden"
+          onClick={() => setIsMobileMenuOpen(false)}
+        ></div>
+      )}
+
       {/* Main Content */}
-      <main className="lg:ml-64 pt-20 min-h-screen px-6 md:px-12 pb-20">
+      <main className="lg:ml-72 pt-20 min-h-screen px-4 sm:px-8 md:px-12 pb-20">
         {/* Header Section */}
-        <section className="max-w-5xl mx-auto mb-12">
+        <section className="max-w-5xl mx-auto mb-8 md:mb-12">
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
             <div>
-              <h1 className="text-4xl font-extrabold tracking-tighter text-on-surface mb-2">Workshop <span className="text-primary">Canvas</span></h1>
-              <p className="text-on-surface-variant text-sm max-w-md leading-relaxed">Refine, iterate, and master your AI instructions with volcanic precision. Optimized for LLM performance.</p>
+              <h1 className="text-3xl md:text-4xl font-extrabold tracking-tighter text-on-surface mb-2">Workshop <span className="text-primary">Canvas</span></h1>
+              <p className="text-on-surface-variant text-xs md:text-sm max-w-md leading-relaxed">Refine, iterate, and master your AI instructions with volcanic precision. Optimized for LLM performance.</p>
             </div>
             <div className="flex items-center gap-4">
               <div className="px-4 py-2 bg-surface-container-low rounded-full nm-inset flex items-center gap-2">
                 <div className={`w-2 h-2 rounded-full ${loading ? 'bg-on-surface-variant animate-pulse' : 'bg-green-500/80 shadow-[0_0_8px_rgba(34,197,94,0.4)]'}`}></div>
-                <span className="text-[10px] font-black tracking-[0.2em] uppercase opacity-40">Engine {loading ? 'Syncing' : 'Online'}</span>
+                <span className="text-[9px] md:text-[10px] font-black tracking-[0.2em] uppercase opacity-40">Engine {loading ? 'Syncing' : 'Online'}</span>
               </div>
             </div>
           </div>
@@ -505,7 +522,7 @@ const App = () => {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                className="w-full bg-transparent border-none focus:ring-0 text-lg md:text-xl text-on-surface placeholder:text-on-surface-variant/20 p-8 min-h-[220px] resize-none font-body leading-loose outline-none"
+                className="w-full bg-transparent border-none focus:ring-0 text-base md:text-xl text-on-surface placeholder:text-on-surface-variant/20 p-4 md:p-8 min-h-[180px] md:min-h-[220px] resize-none font-body leading-loose outline-none"
                 placeholder="Refine your conceptual core here. Let the engine handle the architecture..."
               />
               <div className="flex flex-wrap items-center justify-between p-6 border-t border-white/[0.03] bg-surface/30">
@@ -537,7 +554,7 @@ const App = () => {
                 <button
                   onClick={handleSend}
                   disabled={loading || !input.trim()}
-                  className={`py-3 px-10 rounded-xl border-2 font-black uppercase tracking-[0.25em] text-[10px] flex items-center gap-3 group transition-all duration-500 ${loading
+                  className={`w-full md:w-auto py-3 px-6 md:px-10 rounded-xl border-2 font-black uppercase tracking-[0.25em] text-[9px] md:text-[10px] flex items-center justify-center gap-3 group transition-all duration-500 ${loading
                     ? 'border-surface-container-highest text-on-surface-variant/40 bg-surface-container-low cursor-not-allowed'
                     : 'border-primary/60 text-primary hover:bg-primary hover:text-on-primary hover:shadow-[0_0_40px_rgba(255,122,47,0.4)] shadow-2xl'
                     }`}
@@ -588,7 +605,7 @@ const App = () => {
                   initial={{ opacity: 0, y: 50 }}
                   animate={{ opacity: 1, y: 0 }}
                   key={msg.id}
-                  className="bg-surface-container-low rounded-[2rem] p-8 nm-convex relative overflow-hidden group"
+                  className="bg-surface-container-low rounded-[1.5rem] md:rounded-[2rem] p-4 md:p-8 nm-convex relative overflow-hidden group"
                 >
                   <div className={`grid ${layoutView === 'grid' ? 'grid-cols-1' : 'lg:grid-cols-12'} gap-8`}>
                     {/* Left Panel: The Prompt */}
@@ -611,8 +628,8 @@ const App = () => {
                         </button>
                       </div>
                       <div className="border border-white/[0.05] p-1 rounded-3xl bg-surface/40">
-                        <div className="bg-surface-container-lowest p-8 rounded-[1.4rem]">
-                          <div className="text-on-surface text-base leading-[2] font-body markdown-content opacity-90">
+                        <div className="bg-surface-container-lowest p-4 md:p-8 rounded-[1.4rem]">
+                          <div className="text-on-surface text-sm md:text-base leading-relaxed md:leading-[2] font-body markdown-content opacity-90">
                             <ReactMarkdown>{msg.text}</ReactMarkdown>
                           </div>
                         </div>
