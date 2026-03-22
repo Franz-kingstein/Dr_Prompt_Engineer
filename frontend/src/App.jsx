@@ -159,7 +159,7 @@ const LoadingScreen = () => (
 
     <div className="text-center space-y-4 max-w-md z-10">
       <h1 className="text-xl font-black tracking-tighter text-primary uppercase font-headline">
-        Dr. Prompt Engineer
+        Dr. Prompt
       </h1>
       <div className="flex flex-col items-center gap-2">
         <div className="flex items-center gap-3">
@@ -267,7 +267,7 @@ const PromptRefiner = ({ onRefine, prevPrompt, color }) => {
         value={refinement}
         onChange={(e) => setRefinement(e.target.value)}
         placeholder="How should we adjust this? e.g., 'Make it more cinematic' or 'Focus more on the architecture'."
-        className="w-full bg-surface-container-low border border-white/[0.05] rounded-2xl p-4 text-sm text-on-surface placeholder:text-on-surface-variant/20 focus:outline-none focus:ring-1 focus:ring-primary/30 min-h-[100px] resize-none font-body"
+        className="w-full bg-surface-container-lowest border border-white/[0.05] rounded-2xl p-4 text-sm text-on-surface placeholder:text-on-surface-variant/20 focus:outline-none focus:ring-1 focus:ring-primary/30 min-h-[100px] resize-none font-body"
       />
       <div className="flex justify-end gap-3">
         <button
@@ -300,6 +300,7 @@ const App = () => {
   const [activeTask, setActiveTask] = useState('code'); // code | image | document
   const [formatType, setFormatType] = useState('structured'); // structured | json
   const [statusNote, setStatusNote] = useState(''); // Live backend feedback
+  const [layoutView, setLayoutView] = useState('list'); // grid | list
 
   useEffect(() => {
     // Simulate Neural Sync/Initial Loading Sequence
@@ -309,6 +310,14 @@ const App = () => {
     return () => clearTimeout(timer);
   }, []);
   const [messages, setMessages] = useState([]);
+
+  const handleNewPrompt = () => {
+    setInput('');
+    setMessages([]);
+    setStatusNote('');
+    setActiveTask('code');
+    setFormatType('structured');
+  };
 
   if (view === '404') {
     return <NotFoundView onBack={() => setView('workshop')} />;
@@ -369,10 +378,27 @@ const App = () => {
     }
   };
 
-  const copyToClipboard = (id, text) => {
-    navigator.clipboard.writeText(text);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
+  const copyToClipboard = async (id, text) => {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        // Fallback for non-secure contexts or older browsers
+        const textArea = document.createElement("textarea");
+        textArea.value = text;
+        textArea.style.position = "absolute";
+        textArea.style.opacity = "0";
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      }
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy text: ', err);
+      alert('Failed to copy to clipboard.');
+    }
   };
 
   return (
@@ -420,7 +446,7 @@ const App = () => {
           <p className="text-[10px] text-on-surface-variant font-black tracking-widest uppercase opacity-30 mt-1">Version 1.0</p>
         </div>
         <button
-          onClick={() => setShowConstruction(true)}
+          onClick={handleNewPrompt}
           className="mb-8 w-full py-4 px-6 bg-on-surface text-background font-black uppercase tracking-[0.2em] text-[10px] rounded-xl shadow-xl hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-3 transition-all duration-300"
         >
           <span className="material-symbols-outlined text-lg">add</span>
@@ -540,17 +566,23 @@ const App = () => {
               Refinement Variations
             </h3>
             <div className="flex bg-surface-container rounded-xl p-1 border border-white/[0.03] nm-inset">
-              <button className="p-2 text-primary rounded-lg bg-surface-container-high shadow-lg transition-all hover:scale-105">
+              <button
+                onClick={() => setLayoutView('grid')}
+                className={`p-2 rounded-lg transition-all hover:scale-105 ${layoutView === 'grid' ? 'text-primary bg-surface-container-high shadow-lg' : 'text-on-surface-variant hover:text-on-surface'}`}
+              >
                 <span className="material-symbols-outlined text-base">grid_view</span>
               </button>
-              <button className="p-2 text-on-surface-variant hover:text-on-surface transition-colors rounded-lg">
+              <button
+                onClick={() => setLayoutView('list')}
+                className={`p-2 rounded-lg transition-all hover:scale-105 ${layoutView === 'list' ? 'text-primary bg-surface-container-high shadow-lg' : 'text-on-surface-variant hover:text-on-surface'}`}
+              >
                 <span className="material-symbols-outlined text-base">view_agenda</span>
               </button>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-12">
-            <AnimatePresence>
+          <div className={layoutView === 'grid' ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-8" : "grid grid-cols-1 gap-12"}>
+            <AnimatePresence mode="popLayout">
               {messages.map((msg) => (
                 <motion.div
                   initial={{ opacity: 0, y: 50 }}
@@ -558,25 +590,24 @@ const App = () => {
                   key={msg.id}
                   className="bg-surface-container-low rounded-[2rem] p-8 nm-convex relative overflow-hidden group"
                 >
-                  <div className="absolute top-0 right-0 p-4">
-                    <span className={`bg-${msg.color}/10 text-${msg.color} px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter`}>
-                      {msg.type}
-                    </span>
-                  </div>
-
-                  <div className="grid lg:grid-cols-12 gap-8">
+                  <div className={`grid ${layoutView === 'grid' ? 'grid-cols-1' : 'lg:grid-cols-12'} gap-8`}>
                     {/* Left Panel: The Prompt */}
-                    <div className="lg:col-span-8">
-                      <div className="flex items-center justify-between mb-4">
-                        <h4 className="text-sm font-bold text-on-surface-variant flex items-center gap-2">
-                          <span className={`material-symbols-outlined text-${msg.color} text-sm`}>{msg.icon}</span> Refined Prompt
-                        </h4>
+                    <div className={layoutView === 'grid' ? "col-span-1" : "lg:col-span-8"}>
+                      <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+                        <div className="flex items-center gap-3">
+                          <h4 className="text-sm font-bold text-on-surface-variant flex items-center gap-2">
+                            <span className={`material-symbols-outlined text-${msg.color} text-sm`}>{msg.icon}</span> Refined Prompt
+                          </h4>
+                          <span className={`bg-${msg.color}/10 text-${msg.color} px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-tighter h-fit`}>
+                            {msg.type}
+                          </span>
+                        </div>
                         <button
                           onClick={() => copyToClipboard(msg.id, msg.text)}
-                          className={`flex items-center gap-2 text-[10px] font-bold bg-surface-container-highest px-4 py-2 rounded-lg nm-flat nm-button-active transition-colors ${copiedId === msg.id ? 'text-green-500' : `hover:text-${msg.color}`}`}
+                          className={`flex items-center gap-2 text-[10px] font-bold bg-surface-container-highest px-4 py-2 rounded-lg nm-flat nm-button-active transition-colors h-fit ${copiedId === msg.id ? 'text-green-500' : `hover:text-${msg.color}`}`}
                         >
                           <span className="material-symbols-outlined text-xs">{copiedId === msg.id ? 'check' : 'content_copy'}</span>
-                          {copiedId === msg.id ? 'COPIED!' : '1-CLICK COPY'}
+                          {copiedId === msg.id ? 'COPIED!' : 'COPY'}
                         </button>
                       </div>
                       <div className="border border-white/[0.05] p-1 rounded-3xl bg-surface/40">
@@ -592,7 +623,7 @@ const App = () => {
                     </div>
 
                     {/* Right Panel: Metadata */}
-                    <div className="lg:col-span-4 flex flex-col gap-6">
+                    <div className={layoutView === 'grid' ? "col-span-1 flex flex-col gap-6" : "lg:col-span-4 flex flex-col gap-6"}>
                       <div>
                         <h5 className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest mb-3">Style Parameters</h5>
                         <div className="flex flex-wrap gap-2">

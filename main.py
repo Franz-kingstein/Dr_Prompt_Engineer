@@ -99,6 +99,21 @@ RELEVANCE_THRESHOLD = 0.5
 # -----------------------------
 app = FastAPI()
 
+@app.on_event("startup")
+async def startup_event():
+    # Warm up Ollama/Model
+    print("🚀 Warming up Ollama...")
+    try:
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                OLLAMA_URL,
+                json={"model": "phi3", "prompt": "Identify yourself.", "stream": False},
+                timeout=10
+            )
+        print("✅ Ollama warm-up complete")
+    except Exception as e:
+        print(f"⚠️ Ollama warm-up skipped or failed: {e}")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Allows all origins
@@ -169,7 +184,8 @@ def generate_prompt(task, user_input, cot=False, user_metadata=None, refinement_
         lang = user_metadata.get("preferred_language", "multilingual") or "multilingual"
     
     if task == "code":
-        persona_suffix = f" You are a {expertise} level expert, focusing on {lang} best practices."
+        # Make it more general as requested
+        persona_suffix = f" You are a {expertise} level expert developer with high-level architectural oversight."
     else:
         persona_suffix = f" You are a {expertise} level expert."
 

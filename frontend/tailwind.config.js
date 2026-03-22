@@ -16,6 +16,7 @@ export default {
                 "surface": "#1e1e1e", // Elevated
                 "surface-variant": "#262626", // Tertiary elev
                 "surface-container": "#2c2c2c",
+                "surface-container-low": "#242424", // Defined for consistency
                 "surface-container-high": "#333333",
                 "surface-container-highest": "#3a3a3a",
                 "on-surface": "#fcfaf8", // Off-white
