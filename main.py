@@ -61,6 +61,64 @@ OLLAMA_MODE = os.getenv("OLLAMA_MODE", "ngrok").lower()
 DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "phi3")
 
 # -----------------------------
+# 🤖 Unified LLM Caller
+# -----------------------------
+async def call_llm(prompt: str, span=None) -> str:
+    """Unified helper to call LLM based on OLLAMA_MODE (OpenAI/Groq or Ollama)."""
+    current_url = get_ollama_url()
+    if span:
+        span.set_attribute("url", current_url)
+        span.set_attribute("mode", OLLAMA_MODE)
+        span.set_attribute("model", DEFAULT_MODEL)
+
+    # ── Path A: API mode (OpenAI / Groq chat completions) ──
+    if OLLAMA_MODE == "api":
+        api_key = (
+            os.getenv("OPENAI_API_KEY") or
+            os.getenv("GROQ_API_KEY") or ""
+        )
+        request_headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}"
+        }
+        payload = {
+            "model": DEFAULT_MODEL,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.7
+        }
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                current_url, json=payload,
+                headers=request_headers, timeout=120
+            )
+            response.raise_for_status()
+            result = response.json()
+            return result["choices"][0]["message"]["content"]
+
+    # ── Path B: Ollama format (ngrok / local) ──
+    else:
+        request_headers = {
+            "Content-Type": "application/json",
+            "ngrok-skip-browser-warning": "true",
+            "User-Agent": "DrPromptAPI/1.0"
+        }
+        payload = {
+            "model": DEFAULT_MODEL,
+            "prompt": prompt,
+            "stream": False
+        }
+        async with httpx.AsyncClient() as client:
+            # Note: We use dynamic_timeout if needed, but 120 is safe
+            response = await client.post(
+                current_url, json=payload,
+                headers=request_headers, timeout=120
+            )
+            response.raise_for_status()
+            result = response.json()
+            return result.get("response", "")
+
+
+# -----------------------------
 # 🔥 MLflow Setup
 # -----------------------------
 mlflow.set_tracking_uri("file:./mlruns")
@@ -399,26 +457,17 @@ Reason: <short explanation>
 """
 
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                OLLAMA_URL,
-                json={
-                    "model": "phi3",
-                    "prompt": moderation_prompt,
-                    "stream": False
-                },
-                timeout=60
-            )
-            response.raise_for_status()
-            result = response.json()
-            output = result.get("response", "").lower()
+        output_raw = await call_llm(moderation_prompt)
+        output = output_raw.lower()
 
-            if "yes" in output:
-                return False, output
-            return True, output
+        if "yes" in output:
+            return False, output
+        return True, output
 
     except Exception as e:
+        print(f"❌ Toxicity check failed: {e}")
         return True, f"moderation_error: {str(e)}"
+
 
 
 # -----------------------------
@@ -613,61 +662,10 @@ async def generate(req: RequestBody, background_tasks: BackgroundTasks):
 
             try:
                 with mlflow.start_span(name=f"llm_call_attempt_{retries_used + 1}") as span:
-                    span.set_attribute("model", DEFAULT_MODEL)
-                    span.set_attribute("mode", OLLAMA_MODE)
-                    span.set_attribute("attempt", retries_used + 1)
-
-                    current_url = get_ollama_url()
-                    span.set_attribute("url", current_url)
-
-                    # ── Path A: API mode (OpenAI / Groq chat completions) ──
-                    if OLLAMA_MODE == "api":
-                        api_key = (
-                            os.getenv("OPENAI_API_KEY") or
-                            os.getenv("GROQ_API_KEY") or ""
-                        )
-                        request_headers = {
-                            "Content-Type": "application/json",
-                            "Authorization": f"Bearer {api_key}"
-                        }
-                        payload = {
-                            "model": DEFAULT_MODEL,
-                            "messages": [{"role": "user", "content": prompt}],
-                            "temperature": 0.7
-                        }
-                        async with httpx.AsyncClient() as client:
-                            response = await client.post(
-                                current_url, json=payload,
-                                headers=request_headers, timeout=120
-                            )
-                            response.raise_for_status()
-                            result = response.json()
-                            raw_output = result["choices"][0]["message"]["content"]
-
-                    # ── Path B: Ollama format (ngrok / local) ──
-                    else:
-                        request_headers = {
-                            "Content-Type": "application/json",
-                            "ngrok-skip-browser-warning": "true",
-                            "User-Agent": "DrPromptAPI/1.0"
-                        }
-                        payload = {
-                            "model": DEFAULT_MODEL,
-                            "prompt": prompt,
-                            "stream": False
-                        }
-                        async with httpx.AsyncClient() as client:
-                            response = await client.post(
-                                current_url, json=payload,
-                                headers=request_headers, timeout=120
-                            )
-                            response.raise_for_status()
-                            result = response.json()
-                            raw_output = result.get("response", "")
-
+                    raw_output = await call_llm(prompt, span=span)
                     status = "success"
-                    span.set_attribute("status", "success")
                     print(f"✅ LLM response received ({len(raw_output)} chars)")
+
 
             except Exception as e:
                 # Print the REAL error so it's visible in Render logs
