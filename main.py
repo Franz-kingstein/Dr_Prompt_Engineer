@@ -3,6 +3,7 @@ import httpx
 import asyncio
 import time
 import mlflow
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Response, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -122,7 +123,8 @@ async def call_llm(prompt: str, span=None) -> str:
 # -----------------------------
 # 🔥 MLflow Setup
 # -----------------------------
-mlflow.set_tracking_uri("file:./mlruns")
+# Transitioning to SQLite backend for persistence as file-based tracking is deprecated Feb 2026.
+mlflow.set_tracking_uri("sqlite:///mlflow.db")
 mlflow.set_experiment("Prompt_Generator")
 
 # -----------------------------
@@ -207,12 +209,11 @@ HALLUCINATION_THRESHOLD = 0.5
 RELEVANCE_THRESHOLD = 0.5
 
 # -----------------------------
-# App Init
+# App Lifespan (Replacement for @app.on_event("startup"))
 # -----------------------------
-app = FastAPI(title="Dr Prompt API", version="1.0.0")
-
-@app.on_event("startup")
-async def startup_event():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # --- Startup ---
     ollama_url = get_ollama_url()
     print(f"🚀 LLM Mode: {OLLAMA_MODE} → {ollama_url}")
     # Only attempt Ollama warm-up in ngrok/local mode (not API mode)
@@ -228,14 +229,23 @@ async def startup_event():
             print("✅ Ollama warm-up complete")
         except Exception as e:
             print(f"⚠️ Ollama warm-up skipped or failed: {e}")
+    
+    yield
+    # --- Shutdown ---
+    print("💤 Shutting down Dr Prompt API...")
 
-    # Serve built React frontend as static files (production Docker build)
-    dist_path = os.path.join(os.path.dirname(__file__), "frontend", "dist")
-    if os.path.isdir(dist_path):
-        app.mount("/", StaticFiles(directory=dist_path, html=True), name="static")
-        print(f"✅ Serving frontend from {dist_path}")
-    else:
-        print("ℹ️  No frontend/dist found – running API-only mode")
+# -----------------------------
+# App Init
+# -----------------------------
+app = FastAPI(title="Dr Prompt API", version="1.0.0", lifespan=lifespan)
+
+# Serve built React frontend as static files (production Docker build)
+dist_path = os.path.join(os.path.dirname(__file__), "frontend", "dist")
+if os.path.isdir(dist_path):
+    app.mount("/", StaticFiles(directory=dist_path, html=True), name="static")
+    print(f"✅ Serving frontend from {dist_path}")
+else:
+    print("ℹ️  No frontend/dist found – running API-only mode")
 
 app.add_middleware(
     CORSMiddleware,
@@ -488,6 +498,10 @@ async def validate_output(output_text, framework, user_input=None, prompt_contex
         "issues": [],
         "scores": {}
     }
+    
+    # Initialize metrics as None for safe early returns
+    relevancy_metric = None
+    hallucination_metric = None
 
     # --- STEP 1: 🔥 Toxicity Check ---
     is_safe, reason = await dynamic_toxicity_check(output_text)
@@ -495,7 +509,7 @@ async def validate_output(output_text, framework, user_input=None, prompt_contex
         validation["valid"] = False
         validation["issues"].append("Toxic content detected")
         validation["moderation_reason"] = reason
-        return validation  # Fail early
+        return validation, None, None  # Return placeholder metrics
 
     # --- STEP 2: Structure validation ---
     if framework == "RACE":
@@ -513,7 +527,7 @@ async def validate_output(output_text, framework, user_input=None, prompt_contex
             validation["issues"].append(f"Missing {field}")
     
     if not validation["valid"]:
-        return validation  # Fail early before expensive DeepEval
+        return validation, None, None  # Return placeholder metrics
 
     # --- STEP 3: 🛠️ Advanced Guardrails (DeepEval) ---
     if user_input and prompt_context:

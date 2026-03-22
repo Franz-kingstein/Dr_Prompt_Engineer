@@ -28,7 +28,7 @@ async def test_validate_output_structure_pass():
     output = "Role: x\nAction: y\nContext: z\nExplanation: w"
     
     with patch("main.dynamic_toxicity_check", return_value=(True, "Clean")):
-        val = await validate_output(output, "RACE")
+        val, _, _ = await validate_output(output, "RACE")
         assert val["valid"] is True
         assert len(val["issues"]) == 0
 
@@ -37,7 +37,7 @@ async def test_validate_output_structure_fail():
     from main import validate_output
     output = "Missing headers"
     with patch("main.dynamic_toxicity_check", return_value=(True, "Clean")):
-        val = await validate_output(output, "RACE")
+        val, _, _ = await validate_output(output, "RACE")
         assert val["valid"] is False
         assert any("Missing Role:" in issue for issue in val["issues"])
 
