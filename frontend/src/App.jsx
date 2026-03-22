@@ -422,7 +422,7 @@ const App = () => {
           <span className="material-symbols-outlined text-on-surface/40 text-2xl md:text-3xl" style={{ fontVariationSettings: "'FILL' 1" }}>memory</span>
           <span className="text-xl md:text-2xl font-black text-on-surface uppercase tracking-tighter">Dr. <span className="text-on-surface-variant opacity-60">Prompt</span></span>
         </div>
-        <div className="flex items-center gap-3 md:gap-6">
+        <div className="flex items-center gap-3 md:gap-6 pr-2 md:pr-0">
           <div className="hidden md:flex gap-8 text-[#adaaaa] font-inter text-sm font-medium">
             <a className="text-on-surface font-bold transition-all hover:text-primary px-2" href="#" onClick={(e) => { e.preventDefault(); }}>
               Workshop
@@ -529,44 +529,46 @@ const App = () => {
                 placeholder="Refine your conceptual core here. Let the engine handle the architecture..."
               />
               <div className="flex flex-wrap items-center justify-between p-6 border-t border-white/[0.03] bg-surface/30">
-                <div className="flex gap-6 items-center">
-                  <div className="flex bg-surface-variant/40 rounded-lg p-1 border border-white/[0.05]">
-                    {['code', 'image', 'document'].map(t => (
-                      <button
-                        key={t}
-                        onClick={() => setActiveTask(t)}
-                        className={`px-3 py-1.5 rounded-md text-[9px] font-black uppercase tracking-widest transition-all ${activeTask === t ? 'bg-primary text-on-primary shadow-lg' : 'text-on-surface-variant hover:text-on-surface'}`}
-                      >
-                        {t}
-                      </button>
-                    ))}
-                  </div>
+                <div className="flex flex-col sm:flex-row gap-4 w-full items-center justify-between">
+                  <div className="flex gap-3 items-center w-full sm:w-auto overflow-x-auto no-scrollbar pb-1 sm:pb-0">
+                    <div className="flex bg-surface-variant/40 rounded-lg p-1 border border-white/[0.05] shrink-0">
+                      {['code', 'image', 'document'].map(t => (
+                        <button
+                          key={t}
+                          onClick={() => setActiveTask(t)}
+                          className={`px-3 py-1.5 rounded-md text-[8px] md:text-[9px] font-black uppercase tracking-widest transition-all ${activeTask === t ? 'bg-primary text-on-primary shadow-lg' : 'text-on-surface-variant hover:text-on-surface'}`}
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
 
-                  <div className="flex bg-surface-variant/40 rounded-lg p-1 border border-white/[0.05]">
-                    {['structured', 'json'].map(f => (
-                      <button
-                        key={f}
-                        onClick={() => setFormatType(f)}
-                        className={`px-3 py-1.5 rounded-md text-[9px] font-black uppercase tracking-widest transition-all ${formatType === f ? 'bg-on-surface text-background shadow-lg' : 'text-on-surface-variant hover:text-on-surface'}`}
-                      >
-                        {f}
-                      </button>
-                    ))}
+                    <div className="flex bg-surface-variant/40 rounded-lg p-1 border border-white/[0.05] shrink-0">
+                      {['structured', 'json'].map(f => (
+                        <button
+                          key={f}
+                          onClick={() => setFormatType(f)}
+                          className={`px-3 py-1.5 rounded-md text-[8px] md:text-[9px] font-black uppercase tracking-widest transition-all ${formatType === f ? 'bg-on-surface text-background shadow-lg' : 'text-on-surface-variant hover:text-on-surface'}`}
+                        >
+                          {f}
+                        </button>
+                      ))}
+                    </div>
                   </div>
+                  <button
+                    onClick={handleSend}
+                    disabled={loading || !input.trim()}
+                    className={`w-full sm:w-auto py-4 px-8 md:px-10 rounded-xl border-2 font-black uppercase tracking-[0.25em] text-[9px] md:text-[10px] flex items-center justify-center gap-3 group transition-all duration-500 ${loading
+                      ? 'border-surface-container-highest text-on-surface-variant/40 bg-surface-container-low cursor-not-allowed'
+                      : 'border-primary/60 text-primary hover:bg-primary hover:text-on-primary hover:shadow-[0_0_40px_rgba(255,122,47,0.4)] shadow-2xl'
+                      }`}
+                  >
+                    {loading ? 'Analyzing...' : 'Engineer Prompt'}
+                    <span className={`material-symbols-outlined text-lg transition-transform ${loading ? 'animate-spin' : 'group-hover:translate-x-1'}`}>
+                      {loading ? 'autorenew' : 'auto_awesome'}
+                    </span>
+                  </button>
                 </div>
-                <button
-                  onClick={handleSend}
-                  disabled={loading || !input.trim()}
-                  className={`w-full md:w-auto py-3 px-6 md:px-10 rounded-xl border-2 font-black uppercase tracking-[0.25em] text-[9px] md:text-[10px] flex items-center justify-center gap-3 group transition-all duration-500 ${loading
-                    ? 'border-surface-container-highest text-on-surface-variant/40 bg-surface-container-low cursor-not-allowed'
-                    : 'border-primary/60 text-primary hover:bg-primary hover:text-on-primary hover:shadow-[0_0_40px_rgba(255,122,47,0.4)] shadow-2xl'
-                    }`}
-                >
-                  {loading ? 'Analyzing Neural Patterns...' : 'Engineer Prompt'}
-                  <span className={`material-symbols-outlined text-lg transition-transform ${loading ? 'animate-spin' : 'group-hover:translate-x-1'}`}>
-                    {loading ? 'autorenew' : 'auto_awesome'}
-                  </span>
-                </button>
               </div>
               {statusNote && (
                 <div className="px-8 pb-4 text-[9px] font-bold text-primary/60 uppercase tracking-widest animate-pulse flex items-center gap-2">
