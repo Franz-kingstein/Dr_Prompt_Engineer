@@ -530,25 +530,25 @@ const App = () => {
               />
               <div className="flex flex-wrap items-center justify-between p-6 border-t border-white/[0.03] bg-surface/30">
                 <div className="flex flex-col sm:flex-row gap-6 w-full items-start sm:items-center justify-between">
-                  <div className="flex flex-wrap gap-4 items-center w-full sm:w-auto">
-                    <div className="flex bg-surface-variant/40 rounded-lg p-1 border border-white/[0.05] shrink-0">
+                  <div className="flex flex-wrap gap-3 items-center w-full sm:w-auto">
+                    <div className="flex bg-surface-variant/40 rounded-lg p-1 border border-white/[0.05] w-full sm:w-auto">
                       {['code', 'image', 'document'].map(t => (
                         <button
                           key={t}
                           onClick={() => setActiveTask(t)}
-                          className={`px-3 py-1.5 rounded-md text-[8px] md:text-[9px] font-black uppercase tracking-widest transition-all ${activeTask === t ? 'bg-primary text-on-primary shadow-lg' : 'text-on-surface-variant hover:text-on-surface'}`}
+                          className={`flex-1 px-3 py-1.5 rounded-md text-[8px] md:text-[9px] font-black uppercase tracking-widest transition-all ${activeTask === t ? 'bg-primary text-on-primary shadow-lg' : 'text-on-surface-variant hover:text-on-surface'}`}
                         >
                           {t}
                         </button>
                       ))}
                     </div>
 
-                    <div className="flex bg-surface-variant/40 rounded-lg p-1 border border-white/[0.05] shrink-0">
+                    <div className="flex bg-surface-variant/40 rounded-lg p-1 border border-white/[0.05] w-full sm:w-auto">
                       {['structured', 'json'].map(f => (
                         <button
                           key={f}
                           onClick={() => setFormatType(f)}
-                          className={`px-3 py-1.5 rounded-md text-[8px] md:text-[9px] font-black uppercase tracking-widest transition-all ${formatType === f ? 'bg-on-surface text-background shadow-lg' : 'text-on-surface-variant hover:text-on-surface'}`}
+                          className={`flex-1 px-3 py-1.5 rounded-md text-[8px] md:text-[9px] font-black uppercase tracking-widest transition-all ${formatType === f ? 'bg-on-surface text-background shadow-lg' : 'text-on-surface-variant hover:text-on-surface'}`}
                         >
                           {f}
                         </button>
