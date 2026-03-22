@@ -1,0 +1,55 @@
+# render.yaml — Render Blueprint for Dr Prompt (Prompt Generator v1.0)
+# https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: dr-prompt-api
+    runtime: docker
+    # Point to the Dockerfile in repo root
+    dockerfilePath: ./Dockerfile
+    # Render auto-detects branch from repo connection
+    branch: main
+    # Set to false → Render deploys on every push automatically
+    autoDeploy: true
+
+    # Render injects PORT automatically; we expose on that port
+    healthCheckPath: /metrics
+
+    envVars:
+      # ---------- Required ----------
+      - key: PORT
+        value: 10000          # Render's free tier uses 10000
+
+      # ---------- LLM Mode (set ONE of the modes below) ----------
+      - key: OLLAMA_MODE
+        value: ngrok          # Options: ngrok | api | local | auto
+
+      # ngrok MODE – expose local Ollama with ngrok then paste URL here
+      - key: NGROK_URL
+        value: ""             # e.g. https://xxxxx.ngrok-free.app
+
+      # API MODE – OpenAI / Groq compatible key (set in Render dashboard, NOT here)
+      - key: OPENAI_API_KEY
+        sync: false           # Never committed to VCS
+
+      - key: GROQ_API_KEY
+        sync: false
+
+      - key: API_BASE_URL
+        value: ""             # e.g. https://api.groq.com/openai/v1
+
+      # ---------- Model ----------
+      - key: DEFAULT_MODEL
+        value: phi3           # Override per-mode as needed
+
+      # ---------- MLflow (local tracking, no cloud needed) ----------
+      - key: MLFLOW_TRACKING_URI
+        value: file:./mlruns  # Logs locally inside container
+
+      # ---------- CORS ----------
+      - key: ALLOWED_ORIGINS
+        value: "*"            # Tighten to your frontend domain in prod
+
+      # ---------- Misc ----------
+      - key: PYTHONUNBUFFERED
+        value: "1"

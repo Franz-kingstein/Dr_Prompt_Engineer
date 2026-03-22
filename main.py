@@ -5,6 +5,7 @@ import time
 import mlflow
 from fastapi import FastAPI, Response, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
 from custom_eval_model import LocalOllamaModel
@@ -13,6 +14,51 @@ from deepeval.test_case import LLMTestCase
 from feast import FeatureStore
 import os
 import re
+
+# ============================================================
+# 🔀 Multi-Mode LLM Routing
+# ============================================================
+# Set OLLAMA_MODE env var to one of: ngrok | api | local | auto
+# Render dashboard or .env is where you configure this.
+
+def get_ollama_url() -> str:
+    """Return the Ollama/LLM API endpoint based on OLLAMA_MODE."""
+    mode = os.getenv("OLLAMA_MODE", "ngrok").lower()
+
+    if mode == "ngrok":
+        ngrok_url = os.getenv("NGROK_URL", "").rstrip("/")
+        if ngrok_url:
+            return f"{ngrok_url}/api/generate"
+        print("⚠️  NGROK_URL not set – falling back to local")
+        return "http://localhost:11434/api/generate"
+
+    elif mode == "api":
+        # OpenAI / Groq compatible endpoint
+        base = os.getenv("API_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+        return f"{base}/chat/completions"  # handled separately in call logic
+
+    elif mode == "local":
+        local_url = os.getenv("LOCAL_OLLAMA_URL", "http://localhost:11434").rstrip("/")
+        return f"{local_url}/api/generate"
+
+    elif mode == "auto":
+        # Try ngrok first, then api, then local
+        ngrok_url = os.getenv("NGROK_URL", "").rstrip("/")
+        if ngrok_url:
+            return f"{ngrok_url}/api/generate"
+        api_key = os.getenv("OPENAI_API_KEY") or os.getenv("GROQ_API_KEY")
+        if api_key:
+            base = os.getenv("API_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+            return f"{base}/chat/completions"
+        return "http://localhost:11434/api/generate"
+
+    # Fallback
+    print(f"⚠️  Unknown OLLAMA_MODE '{mode}', defaulting to local")
+    return "http://localhost:11434/api/generate"
+
+
+OLLAMA_MODE = os.getenv("OLLAMA_MODE", "ngrok").lower()
+DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "phi3")
 
 # -----------------------------
 # 🔥 MLflow Setup
@@ -97,22 +143,33 @@ RELEVANCE_THRESHOLD = 0.5
 # -----------------------------
 # App Init
 # -----------------------------
-app = FastAPI()
+app = FastAPI(title="Dr Prompt API", version="1.0.0")
 
 @app.on_event("startup")
 async def startup_event():
-    # Warm up Ollama/Model
-    print("🚀 Warming up Ollama...")
-    try:
-        async with httpx.AsyncClient() as client:
-            await client.post(
-                OLLAMA_URL,
-                json={"model": "phi3", "prompt": "Identify yourself.", "stream": False},
-                timeout=10
-            )
-        print("✅ Ollama warm-up complete")
-    except Exception as e:
-        print(f"⚠️ Ollama warm-up skipped or failed: {e}")
+    ollama_url = get_ollama_url()
+    print(f"🚀 LLM Mode: {OLLAMA_MODE} → {ollama_url}")
+    # Only attempt Ollama warm-up in ngrok/local mode (not API mode)
+    if OLLAMA_MODE in ("ngrok", "local", "auto"):
+        print("🔥 Warming up Ollama...")
+        try:
+            async with httpx.AsyncClient() as client:
+                await client.post(
+                    ollama_url,
+                    json={"model": DEFAULT_MODEL, "prompt": "Identify yourself.", "stream": False},
+                    timeout=10
+                )
+            print("✅ Ollama warm-up complete")
+        except Exception as e:
+            print(f"⚠️ Ollama warm-up skipped or failed: {e}")
+
+    # Serve built React frontend as static files (production Docker build)
+    dist_path = os.path.join(os.path.dirname(__file__), "frontend", "dist")
+    if os.path.isdir(dist_path):
+        app.mount("/", StaticFiles(directory=dist_path, html=True), name="static")
+        print(f"✅ Serving frontend from {dist_path}")
+    else:
+        print("ℹ️  No frontend/dist found – running API-only mode")
 
 app.add_middleware(
     CORSMiddleware,
@@ -122,7 +179,7 @@ app.add_middleware(
     allow_headers=["*"],  # Allows all headers
 )
 
-OLLAMA_URL = "http://localhost:11434/api/generate"
+# OLLAMA_URL is now resolved dynamically per-request via get_ollama_url()
 
 # Feast Initialization
 FEAST_REPO_PATH = os.path.join(os.getcwd(), "feature_repo/feature_repo")
@@ -441,10 +498,20 @@ async def validate_output(output_text, framework, user_input=None, prompt_contex
 
 
 # -----------------------------
+# Health Check Endpoint
+# -----------------------------
+@app.get("/health")
+def health():
+    """Used by Render health checks. Returns 200 OK."""
+    return {"status": "ok", "mode": OLLAMA_MODE, "model": DEFAULT_MODEL}
+
+
+# -----------------------------
 # Prometheus Endpoint
 # -----------------------------
 @app.get("/metrics")
 def metrics():
+    """Prometheus scrape endpoint – publicly accessible for local Prometheus."""
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 # -----------------------------
@@ -545,16 +612,18 @@ async def generate(req: RequestBody, background_tasks: BackgroundTasks):
             )
 
             try:
-                # MLflow tracing in async context might need care, but using span as context manager is fine if it doesn't block
-                with mlflow.start_span(name=f"ollama_llm_call_attempt_{retries_used + 1}") as span:
-                    span.set_attribute("model", "phi3")
+                with mlflow.start_span(name=f"llm_call_attempt_{retries_used + 1}") as span:
+                    span.set_attribute("model", DEFAULT_MODEL)
+                    span.set_attribute("mode", OLLAMA_MODE)
                     span.set_attribute("attempt", retries_used + 1)
+
+                    current_url = get_ollama_url()
 
                     async with httpx.AsyncClient() as client:
                         response = await client.post(
-                            OLLAMA_URL,
+                            current_url,
                             json={
-                                "model": "phi3",
+                                "model": DEFAULT_MODEL,
                                 "prompt": prompt,
                                 "stream": False
                             },

@@ -1,56 +1,94 @@
-name: LLM Pipeline CI/CD
+name: Dr Prompt – CI/CD (Build, Test & Deploy)
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main, master]
   pull_request:
-    branches: [ main, master ]
+    branches: [main, master]
 
 jobs:
+  # ─────────────────────────────────────────────
+  # Job 1: Run unit tests
+  # ─────────────────────────────────────────────
   test:
+    name: 🧪 Unit Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Set up Node.js 24
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements-deploy.txt') }}
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install -r requirements-deploy.txt
           pip install pytest pytest-asyncio
-          
-      - name: Run unit tests with Mocking
+
+      - name: Run tests
         run: |
           export PYTHONPATH=$PYTHONPATH:.
           pytest -v tests/test_main.py
 
-  build:
+  # ─────────────────────────────────────────────
+  # Job 2: Build Docker image and push to Docker Hub
+  # ─────────────────────────────────────────────
+  build-and-push:
+    name: 🐳 Build & Push Docker Image
     needs: test
     runs-on: ubuntu-latest
+    # Only push on actual commits to main (not PRs)
+    if: github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-        
+
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-          
-      - name: Build and push Docker image
+
+      - name: Build and push
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          tags: ${{ secrets.DOCKER_USERNAME }}/llm-pipeline:latest
+          # Tag with both 'latest' and the git SHA for traceability
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/dr-prompt:latest
+            ${{ secrets.DOCKER_USERNAME }}/dr-prompt:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ─────────────────────────────────────────────
+  # Job 3: Trigger Render auto-deploy via deploy hook
+  # ─────────────────────────────────────────────
+  deploy-render:
+    name: 🚀 Deploy to Render
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - name: Trigger Render deploy hook
+        # Set RENDER_DEPLOY_HOOK_URL in GitHub Secrets
+        # (Render → Service → Settings → Deploy Hooks → Copy URL)
+        run: |
+          if [ -n "${{ secrets.RENDER_DEPLOY_HOOK_URL }}" ]; then
+            curl -s -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}" \
+              -o /dev/null -w "HTTP %{http_code}\n"
+            echo "✅ Render deploy hook triggered"
+          else
+            echo "ℹ️  RENDER_DEPLOY_HOOK_URL not set – skipping deploy hook"
+            echo "ℹ️  Render will auto-deploy from repo if connected directly"
+          fi
