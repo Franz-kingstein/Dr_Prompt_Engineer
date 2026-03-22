@@ -529,8 +529,8 @@ const App = () => {
                 placeholder="Refine your conceptual core here. Let the engine handle the architecture..."
               />
               <div className="flex flex-wrap items-center justify-between p-6 border-t border-white/[0.03] bg-surface/30">
-                <div className="flex flex-col sm:flex-row gap-4 w-full items-center justify-between">
-                  <div className="flex gap-3 items-center w-full sm:w-auto overflow-x-auto no-scrollbar pb-1 sm:pb-0">
+                <div className="flex flex-col sm:flex-row gap-6 w-full items-start sm:items-center justify-between">
+                  <div className="flex flex-wrap gap-4 items-center w-full sm:w-auto">
                     <div className="flex bg-surface-variant/40 rounded-lg p-1 border border-white/[0.05] shrink-0">
                       {['code', 'image', 'document'].map(t => (
                         <button
