@@ -4,7 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import './index.css';
 
 // --- Constants ---
-const BACKEND_URL = "http://localhost:8000/generate";
+const BACKEND_URL = "/generate";
 
 // --- Components ---
 
