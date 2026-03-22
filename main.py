@@ -123,8 +123,11 @@ async def call_llm(prompt: str, span=None) -> str:
 # -----------------------------
 # 🔥 MLflow Setup
 # -----------------------------
-# Transitioning to SQLite backend for persistence as file-based tracking is deprecated Feb 2026.
-mlflow.set_tracking_uri("sqlite:///mlflow.db")
+# File-based tracking is deprecated as of Feb 2026, but used for simplicity in CI/CD.
+import warnings
+with warnings.catch_warnings():
+    warnings.filterwarnings("ignore", category=FutureWarning, module="mlflow")
+    mlflow.set_tracking_uri("file:./mlruns")
 mlflow.set_experiment("Prompt_Generator")
 
 # -----------------------------
