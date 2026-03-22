@@ -619,6 +619,14 @@ async def generate(req: RequestBody, background_tasks: BackgroundTasks):
 
                     current_url = get_ollama_url()
 
+                    # Build headers — add ngrok bypass header when in ngrok mode
+                    # (free-tier ngrok shows an HTML warning page without this)
+                    request_headers = {
+                        "Content-Type": "application/json",
+                        "ngrok-skip-browser-warning": "true",
+                        "User-Agent": "DrPromptAPI/1.0"
+                    }
+
                     async with httpx.AsyncClient() as client:
                         response = await client.post(
                             current_url,
@@ -627,6 +635,7 @@ async def generate(req: RequestBody, background_tasks: BackgroundTasks):
                                 "prompt": prompt,
                                 "stream": False
                             },
+                            headers=request_headers,
                             timeout=120
                         )
 
@@ -635,6 +644,7 @@ async def generate(req: RequestBody, background_tasks: BackgroundTasks):
                         raw_output = result.get("response", "")
                         status = "success"
                         span.set_attribute("status", status)
+                        print(f"✅ LLM response received ({len(raw_output)} chars)")
 
             except Exception as e:
                 raw_output = str(e)
