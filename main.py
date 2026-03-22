@@ -242,13 +242,6 @@ async def lifespan(app: FastAPI):
 # -----------------------------
 app = FastAPI(title="Dr Prompt API", version="1.0.0", lifespan=lifespan)
 
-# Serve built React frontend as static files (production Docker build)
-dist_path = os.path.join(os.path.dirname(__file__), "frontend", "dist")
-if os.path.isdir(dist_path):
-    app.mount("/", StaticFiles(directory=dist_path, html=True), name="static")
-    print(f"✅ Serving frontend from {dist_path}")
-else:
-    print("ℹ️  No frontend/dist found – running API-only mode")
 
 app.add_middleware(
     CORSMiddleware,
@@ -819,3 +812,18 @@ async def generate(req: RequestBody, background_tasks: BackgroundTasks):
             "retries_used": retries_used,
             "latency": latency
         }
+# --- FINALLY: Serve Static Files (at root, MUST BE LAST to prevent shadowing) ---
+dist_path = os.path.join(os.path.dirname(__file__), "frontend", "dist")
+if os.path.isdir(dist_path):
+    app.mount("/", StaticFiles(directory=dist_path, html=True), name="static")
+    print(f"✅ Serving frontend from {dist_path}")
+else:
+    print("ℹ️  No frontend/dist found – running API-only mode")
+
+# --- FINALLY: Serve Static Files (at root, MUST BE LAST to prevent shadowing) ---
+dist_path = os.path.join(os.path.dirname(__file__), "frontend", "dist")
+if os.path.isdir(dist_path):
+    app.mount("/", StaticFiles(directory=dist_path, html=True), name="static")
+    print(f"✅ Serving frontend from {dist_path}")
+else:
+    print("ℹ️  No frontend/dist found – running API-only mode")
