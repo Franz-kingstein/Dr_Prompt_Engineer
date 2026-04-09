@@ -22,9 +22,11 @@ from feast.types import Float32, Float64, Int64, Json, Map, String, Struct
 # Define a project for the feature repo
 project = Project(name="feature_repo", description="A project for driver statistics")
 
+from feast.value_type import ValueType
+
 # Define an entity for the driver. You can think of an entity as a primary key used to
 # fetch features.
-driver = Entity(name="driver", join_keys=["driver_id"])
+driver = Entity(name="driver", join_keys=["driver_id"], value_type=ValueType.INT64)
 
 # Read data from parquet files. Parquet is convenient for local development mode. For
 # production, you can use your favorite DWH, such as BigQuery. See Feast documentation

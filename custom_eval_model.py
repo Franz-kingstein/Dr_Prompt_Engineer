@@ -24,14 +24,15 @@ class LocalOllamaModel(DeepEvalBaseLLM):
                 json={
                     "model": self.model_name,
                     "prompt": prompt,
-                    "stream": False
+                    "stream": False,
+                    "format": "json" # Force JSON output for DeepEval metrics
                 },
                 headers=self.headers,
                 timeout=120
             )
             response.raise_for_status()
             result = response.json()
-            return result.get("response", "")
+            return result.get("response", "").strip()
         except Exception as e:
             print(f"Error calling LLM for eval: {e}")
             return ""
@@ -45,14 +46,15 @@ class LocalOllamaModel(DeepEvalBaseLLM):
                     json={
                         "model": self.model_name,
                         "prompt": prompt,
-                        "stream": False
+                        "stream": False,
+                        "format": "json" # Force JSON output for DeepEval metrics
                     },
                     headers=self.headers,
                     timeout=120
                 )
                 response.raise_for_status()
                 result = response.json()
-                return result.get("response", "")
+                return result.get("response", "").strip()
         except Exception as e:
             print(f"Error calling LLM for eval (async): {e}")
             return ""

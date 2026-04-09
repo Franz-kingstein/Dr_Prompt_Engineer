@@ -10,12 +10,18 @@ from feast import (
 )
 from feast.types import Int64, String
 
+import os
+from feast.value_type import ValueType
+
 # Define the user entity
-user = Entity(name="user", join_keys=["user_id"])
+user = Entity(name="user", join_keys=["user_id"], value_type=ValueType.INT64)
+
+# Dynamic path calculation
+DATA_PATH = os.path.join(os.path.dirname(__file__), "data/user_features.parquet")
 
 # File source for user features
 user_stats_source = FileSource(
-    path="/home/franz/Documents/Dr_Prompt_Engineer/feature_repo/feature_repo/data/user_features.parquet",
+    path=DATA_PATH,
     timestamp_field="event_timestamp",
     created_timestamp_column="created_timestamp",
 )

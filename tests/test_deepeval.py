@@ -7,11 +7,15 @@ import os
 
 # Use the same dynamically resolved URL logic for local testing
 def get_ollama_url():
-    ngrok_url = os.getenv("NGROK_URL", "https://pistillate-quentin-intentioned.ngrok-free.dev")
-    mode = os.getenv("OLLAMA_MODE", "ngrok")
-    if mode == "ngrok":
+    ngrok_url = os.getenv("NGROK_URL", "").rstrip("/")
+    mode = os.getenv("OLLAMA_MODE", "ngrok").lower()
+    
+    if mode == "ngrok" and ngrok_url:
         return f"{ngrok_url}/api/generate"
-    return "http://localhost:11434/api/generate"
+    
+    # Fallback/Local
+    local_url = os.getenv("LOCAL_OLLAMA_URL", "http://localhost:11434").rstrip("/")
+    return f"{local_url}/api/generate"
 
 MODEL_NAME = os.getenv("DEFAULT_MODEL", "phi3")
 eval_model = LocalOllamaModel(model_name=MODEL_NAME, url=get_ollama_url())
@@ -30,6 +34,7 @@ def test_prompt_quality(input_text, actual_output, context):
     test_case = LLMTestCase(
         input=input_text,
         actual_output=actual_output,
+        context=context,
         retrieval_context=context
     )
     

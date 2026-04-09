@@ -36,6 +36,10 @@ jobs:
       - name: Run tests
         run: |
           export PYTHONPATH=$PYTHONPATH:.
+          # Self-heal MLflow schema mismatch if the DB exists in git
+          if [ -f "mlflow.db" ]; then
+            mlflow db upgrade sqlite:///mlflow.db
+          fi
           pytest -v tests/test_main.py
 
   # ─────────────────────────────────────────────
