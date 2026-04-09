@@ -65,27 +65,33 @@ async def run_tuning_experiment():
             hallucination_metric = HallucinationMetric(threshold=0.5, model=eval_model)
             
             print("⚖️  Running DeepEval metrics...")
-            await asyncio.gather(
-                relevancy_metric.a_measure(test_case),
-                hallucination_metric.a_measure(test_case)
-            )
-            
-            # 3. Log to MLflow
-            mlflow.log_params({
-                "model": MODEL_NAME,
-                "temperature": temp,
-                "task": "code_generation"
-            })
-            
-            mlflow.log_metrics({
-                "relevancy_score": relevancy_metric.score,
-                "hallucination_score": hallucination_metric.score,
-                "latency_seconds": latency
-            })
+            try:
+                await asyncio.gather(
+                    relevancy_metric.a_measure(test_case),
+                    hallucination_metric.a_measure(test_case)
+                )
+                
+                # 3. Log to MLflow
+                mlflow.log_params({
+                    "model": MODEL_NAME,
+                    "temperature": temp,
+                    "task": "code_generation"
+                })
+                
+                mlflow.log_metrics({
+                    "relevancy_score": float(relevancy_metric.score),
+                    "hallucination_score": float(hallucination_metric.score),
+                    "latency_seconds": latency
+                })
+                print(f"✅ Results for Temp {temp}: Relevancy={relevancy_metric.score:.2f}, Hallucination={hallucination_metric.score:.2f}")
+            except Exception as e:
+                print(f"⚠️  Metrics calculation failed for temp {temp}: {e}")
+                # Log at least the latency and temp even if metrics failed
+                mlflow.log_param("temperature", temp)
+                mlflow.log_metric("latency_seconds", latency)
+                mlflow.set_tag("eval_status", "failed")
             
             mlflow.log_text(output, "generated_output.txt")
-            
-            print(f"✅ Results for Temp {temp}: Relevancy={relevancy_metric.score:.2f}, Hallucination={hallucination_metric.score:.2f}")
 
 if __name__ == "__main__":
     asyncio.run(run_tuning_experiment())

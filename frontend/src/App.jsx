@@ -566,7 +566,7 @@ const App = () => {
                     </div>
                   </div>
                   <button
-                    onClick={handleSend}
+                    onClick={() => handleSend()}
                     disabled={loading || !input.trim()}
                     className={`w-full sm:w-auto py-4 px-8 md:px-10 rounded-xl border-2 font-black uppercase tracking-[0.25em] text-[9px] md:text-[10px] flex items-center justify-center gap-3 group transition-all duration-500 ${loading
                       ? 'border-surface-container-highest text-on-surface-variant/40 bg-surface-container-low cursor-not-allowed'
@@ -610,21 +610,28 @@ const App = () => {
               >
                 <span className="material-symbols-outlined text-base">view_agenda</span>
               </button>
+              <button
+                onClick={() => setLayoutView('compare')}
+                className={`p-2 rounded-lg transition-all hover:scale-105 ${layoutView === 'compare' ? 'text-primary bg-surface-container-high shadow-lg' : 'text-on-surface-variant hover:text-on-surface'}`}
+                title="Compare Latest Two"
+              >
+                <span className="material-symbols-outlined text-base">compare</span>
+              </button>
             </div>
           </div>
 
-          <div className={layoutView === 'grid' ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-8" : "grid grid-cols-1 gap-12"}>
+          <div className={layoutView === 'list' ? "grid grid-cols-1 gap-12" : "grid grid-cols-1 md:grid-cols-2 gap-8"}>
             <AnimatePresence mode="popLayout">
-              {messages.map((msg) => (
+              {(layoutView === 'compare' ? messages.slice(0, 2) : messages).map((msg) => (
                 <motion.div
-                  initial={{ opacity: 0, y: 50 }}
+                  initial={{ opacity: 0, x: layoutView === 'compare' ? 100 : 0, y: layoutView === 'compare' ? 0 : 50 }}
                   animate={{ opacity: 1, y: 0 }}
                   key={msg.id}
                   className="bg-surface-container-low rounded-[1.5rem] md:rounded-[2rem] p-4 md:p-8 nm-convex relative overflow-hidden group"
                 >
-                  <div className={`grid ${layoutView === 'grid' ? 'grid-cols-1' : 'lg:grid-cols-12'} gap-8`}>
+                  <div className={`grid ${layoutView !== 'list' ? 'grid-cols-1' : 'lg:grid-cols-12'} gap-8`}>
                     {/* Left Panel: The Prompt */}
-                    <div className={layoutView === 'grid' ? "col-span-1" : "lg:col-span-8"}>
+                    <div className={layoutView !== 'list' ? "col-span-1" : "lg:col-span-8"}>
                       <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
                         <div className="flex items-center gap-3">
                           <h4 className="text-sm font-bold text-on-surface-variant flex items-center gap-2">
@@ -655,7 +662,7 @@ const App = () => {
                     </div>
 
                     {/* Right Panel: Metadata */}
-                    <div className={layoutView === 'grid' ? "col-span-1 flex flex-col gap-6" : "lg:col-span-4 flex flex-col gap-6"}>
+                    <div className={layoutView !== 'list' ? "col-span-1 flex flex-col gap-6" : "lg:col-span-4 flex flex-col gap-6"}>
                       <div>
                         <h5 className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest mb-3">Style Parameters</h5>
                         <div className="flex flex-wrap gap-2">

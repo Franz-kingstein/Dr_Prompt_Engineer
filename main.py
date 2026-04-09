@@ -349,42 +349,46 @@ STRICT {framework} format:
     if task == "code":
         prompt = f"""
 You are an expert software engineer.{persona_suffix}
-Your task is to generate a high-quality coding prompt based on the user's input.
+Your task is to generate a high-quality, technically precise coding prompt.
 STRICT RACE format:
-Role: <Persona>
-Action: <Coding task>
-Context: <Environment, libraries, constraints>
-Explanation: <Logic behind the code>
+Role: <Professional Persona>
+Action: <Specific technical implementation task>
+Context: <Architecture, libraries (strict versions), and constraints>
+Explanation: <Brief logic overview without fluff>
 
 Task: {user_input}
 """
     elif task == "image":
         prompt = f"""
-You are an expert prompt engineer.{persona_suffix}
-Generate a detailed image generation prompt (e.g., Midjourney/DALL-E).
-DO NOT include any code or programming language references unless specifically requested.
-STRICT CARE format:
-Context: <Lighting, style, camera>
-Action: <Main subject activity>
-Result: <Visual outcome>
-Example: <Short sample prompt string>
+You are an ELITE prompt engineer specializing in hyper-realistic and artistic image generation (Midjourney v6, DALL-E 3).{persona_suffix}
 
-Task: {user_input}
+CRITICAL:
+1. Be precise and technical. Avoid vague, flowery, or exaggerated adjectives.
+2. Focus on physical descriptors: lighting (e.g., 'Golden hour', 'Chiaroscuro'), lens (e.g., '35mm', 'f/1.8'), and specific art styles.
+3. The 'Result' must describe the scene visually, not emotionally.
+
+STRICT CARE format:
+Context: <Lighting, specific style/era, camera/lens settings>
+Action: <Direct physical activity of the main subject>
+Result: <Visual outcome description for a computer vision model>
+Example: <Concise prompt string optimized for direct model input>
+
+User Task: {user_input}
 """
     elif task == "document":
         prompt = f"""
-You are a research assistant.{persona_suffix}
-Generate a structured document creation prompt.
+You are a career research assistant.{persona_suffix}
+Generate a structured, professional document creation prompt. Avoid conversational filler.
 STRICT POST format:
-Persona: <Writer's role>
-Observation: <Current situation or background>
-Scenario: <Exact problem being solved>
-Task: <Directives for the AI>
+Persona: <Specialized writer's role>
+Observation: <Contextual background or specific constraints>
+Scenario: <Exact problem or goal being addressed>
+Task: <Directives for the AI to follow>
 
 Input: {user_input}
 """
     else:
-        prompt = f"System: Generate a prompt for: {user_input}"
+        prompt = f"System: Generate a professional prompt for: {user_input}"
 
     if cot:
         prompt += "\nThink step by step."
@@ -765,8 +769,8 @@ async def generate(req: RequestBody, background_tasks: BackgroundTasks):
                 b_scores["hallucination"] = b_hallucination_metric.score
                 
                 # Update Prometheus Gauges
-                EVAL_HALLUCINATION.labels(task=metrics_req.task).set(b_relevancy_metric.score)
-                EVAL_RELEVANCY.labels(task=metrics_req.task).set(b_hallucination_metric.score)
+                EVAL_HALLUCINATION.labels(task=metrics_req.task).set(b_hallucination_metric.score)
+                EVAL_RELEVANCY.labels(task=metrics_req.task).set(b_relevancy_metric.score)
                 
                 # 2. 🚀 Track in Confident AI (Dashboard)
                 if api_key:
@@ -815,13 +819,6 @@ async def generate(req: RequestBody, background_tasks: BackgroundTasks):
             "retries_used": retries_used,
             "latency": latency
         }
-# --- FINALLY: Serve Static Files (at root, MUST BE LAST to prevent shadowing) ---
-dist_path = os.path.join(os.path.dirname(__file__), "frontend", "dist")
-if os.path.isdir(dist_path):
-    app.mount("/", StaticFiles(directory=dist_path, html=True), name="static")
-    print(f"✅ Serving frontend from {dist_path}")
-else:
-    print("ℹ️  No frontend/dist found – running API-only mode")
 
 # --- FINALLY: Serve Static Files (at root, MUST BE LAST to prevent shadowing) ---
 dist_path = os.path.join(os.path.dirname(__file__), "frontend", "dist")
@@ -830,3 +827,4 @@ if os.path.isdir(dist_path):
     print(f"✅ Serving frontend from {dist_path}")
 else:
     print("ℹ️  No frontend/dist found – running API-only mode")
+

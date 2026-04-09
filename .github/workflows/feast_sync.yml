@@ -1,0 +1,30 @@
+name: 🍴 Feast Feature Sync
+
+on:
+  push:
+    paths:
+      - 'feature_repo/data/**'
+      - 'feature_repo/feature_repo/**'
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Feast
+        run: |
+          pip install feast pandas
+
+      - name: Materialization
+        run: |
+          cd feature_repo/feature_repo
+          feast apply
+          # Materialize data from the beginning of today to now
+          CURRENT_DATE=$(date -u +"%Y-%m-%dT%H:%M:%S")
+          feast materialize-incremental $CURRENT_DATE
