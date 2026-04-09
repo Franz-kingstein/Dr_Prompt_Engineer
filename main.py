@@ -127,7 +127,7 @@ async def call_llm(prompt: str, span=None) -> str:
 import warnings
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=FutureWarning, module="mlflow")
-    mlflow.set_tracking_uri("file:./mlruns")
+    mlflow.set_tracking_uri("sqlite:///mlflow.db")
 mlflow.set_experiment("Prompt_Generator")
 
 # -----------------------------

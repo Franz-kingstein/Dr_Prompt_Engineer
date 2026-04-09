@@ -1,0 +1,5 @@
+user_id,expertise_level,preferred_language,last_task_type,signup_date
+1001,Expert,Python,code,2026-01-01
+1002,Beginner,JavaScript,image,2026-02-15
+1003,Intermediate,C++,document,2026-03-10
+1004,Professional,Python,code,2026-04-01

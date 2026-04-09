@@ -15,7 +15,7 @@ user = Entity(name="user", join_keys=["user_id"])
 
 # File source for user features
 user_stats_source = FileSource(
-    path="/home/franz/Documents/Prompt Project/feature_repo/feature_repo/data/user_features.parquet",
+    path="/home/franz/Documents/Dr_Prompt_Engineer/feature_repo/feature_repo/data/user_features.parquet",
     timestamp_field="event_timestamp",
     created_timestamp_column="created_timestamp",
 )
