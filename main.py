@@ -16,6 +16,7 @@ import deepeval
 from feast import FeatureStore
 import os
 import re
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 # ============================================================
 # 🔀 Multi-Mode LLM Routing
@@ -65,6 +66,11 @@ DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "phi3")
 # -----------------------------
 # 🤖 Unified LLM Caller
 # -----------------------------
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type((httpx.ConnectError, httpx.TimeoutException, httpx.RemoteProtocolError))
+)
 async def call_llm(prompt: str, span=None) -> str:
     """Unified helper to call LLM based on OLLAMA_MODE (OpenAI/Groq or Ollama)."""
     current_url = get_ollama_url()
@@ -227,7 +233,7 @@ async def lifespan(app: FastAPI):
                 await client.post(
                     ollama_url,
                     json={"model": DEFAULT_MODEL, "prompt": "Identify yourself.", "stream": False},
-                    timeout=10
+                    timeout=30
                 )
             print("✅ Ollama warm-up complete")
         except Exception as e:
