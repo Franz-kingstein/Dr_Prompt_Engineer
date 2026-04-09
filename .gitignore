@@ -52,5 +52,18 @@ coverage.xml
 *.swp
 *.swo
 
-# Docker
-.docker/
+# MLOps & Monitoring
+mlflow.db
+mlruns/
+prometheus_data/
+*.log
+
+# Frontend & Build
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+dist/
+
+# System
+.DS_Store
+Thumbs.db

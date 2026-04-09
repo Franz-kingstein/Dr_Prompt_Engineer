@@ -23,8 +23,8 @@ pydantic==2.12.1
 pydantic-settings==2.13.1
 
 # --- MLflow (tracking only – no server) ---
-mlflow-skinny==3.10.1
-mlflow-tracing==3.10.1
+mlflow-skinny==2.12.1
+mlflow-tracing==2.12.1
 
 # --- Prometheus ---
 prometheus-client==0.24.1
