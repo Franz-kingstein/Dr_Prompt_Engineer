@@ -7,20 +7,20 @@
 # =============================================================
 
 # --- Web Framework ---
-fastapi==0.135.1
-uvicorn[standard]>=0.30.6,<=0.34.0
-python-multipart==0.0.22
-starlette==0.52.1
-gunicorn==25.1.0
+fastapi
+uvicorn[standard]
+python-multipart
+starlette
+gunicorn<24
 
 # --- HTTP Clients ---
-httpx==0.28.1
-requests==2.32.5
-aiohttp==3.13.3
+httpx
+requests
+aiohttp
 
 # --- Data Validation ---
-pydantic==2.12.1
-pydantic-settings==2.13.1
+pydantic
+pydantic-settings
 
 # --- MLflow (latest stable) ---
 mlflow==2.20.2
