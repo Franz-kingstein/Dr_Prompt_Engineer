@@ -25,8 +25,8 @@ eval_model = LocalOllamaModel(model_name=MODEL_NAME, url=get_ollama_url())
     [
         (
             "Implement a binary search in Python",
-            "Role: Developer\nAction: Binary Search\nContext: Python 3.10\nExplanation: Using iterative approach.",
-            ["Binary search is a search algorithm that finds the position of a target value within a sorted array."]
+            "Role: Developer\nAction: Implement a Binary Search using an iterative approach.\nContext: Python 3.10\nExplanation: Iterative approach avoids recursion depth issues.",
+            ["The user needs an iterative binary search implemented in Python 3.10 by a Developer."]
         )
     ]
 )

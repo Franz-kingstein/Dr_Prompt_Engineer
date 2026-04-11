@@ -289,6 +289,50 @@ const PromptRefiner = ({ onRefine, prevPrompt, color }) => {
 };
 
 
+const DatasetExplorer = ({ onClose }) => (
+  <div className="fixed inset-0 z-[120] flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm transition-all duration-300">
+    <motion.div
+      initial={{ scale: 0.8, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
+      exit={{ scale: 0.8, opacity: 0 }}
+      className="bg-surface-container-high neumorphic-extruded border border-primary/30 rounded-3xl p-8 max-w-2xl w-full relative h-[600px] overflow-y-auto"
+    >
+      <div className="flex justify-between items-center mb-6">
+        <h3 className="text-xl font-black text-on-surface uppercase tracking-tighter">Feature Store Dashboard</h3>
+        <button onClick={onClose} className="text-on-surface-variant hover:text-primary transition-all">
+          <span className="material-symbols-outlined">close</span>
+        </button>
+      </div>
+      <p className="text-sm text-on-surface-variant mb-6 font-medium">Dataset explorer for Parquet-based feast offline store features.</p>
+
+      <div className="grid grid-cols-2 gap-4 mb-6">
+        <div className="p-4 bg-surface-container-low rounded-xl border border-white/5 nm-inset">
+          <h4 className="text-xs uppercase font-bold text-primary mb-1">Total Entities</h4>
+          <span className="text-2xl font-black">10,245</span>
+        </div>
+        <div className="p-4 bg-surface-container-low rounded-xl border border-white/5 nm-inset">
+          <h4 className="text-xs uppercase font-bold text-primary mb-1">Feature Sets</h4>
+          <span className="text-2xl font-black">4</span>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <h4 className="text-sm font-bold text-on-surface uppercase tracking-widest">Metadata Distribution (Expertise)</h4>
+        <div className="w-full bg-surface-container-lowest rounded-full h-4 overflow-hidden flex">
+          <div className="bg-primary h-full w-[40%]" title="Professional: 40%"></div>
+          <div className="bg-tertiary h-full w-[35%]" title="Intermediate: 35%"></div>
+          <div className="bg-error h-full w-[25%]" title="Beginner: 25%"></div>
+        </div>
+        <div className="flex justify-between text-[10px] text-on-surface-variant uppercase font-bold px-2 block">
+          <span>Prof (40%)</span>
+          <span>Inter (35%)</span>
+          <span>Beg (25%)</span>
+        </div>
+      </div>
+    </motion.div>
+  </div>
+);
+
 const App = () => {
   const [view, setView] = useState('workshop'); // workshop | 404
   const [input, setInput] = useState('');
@@ -302,6 +346,8 @@ const App = () => {
   const [statusNote, setStatusNote] = useState(''); // Live backend feedback
   const [layoutView, setLayoutView] = useState('list'); // grid | list
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [selectedModel, setSelectedModel] = useState('phi3');
+  const [showDatasetExplorer, setShowDatasetExplorer] = useState(false);
 
   useEffect(() => {
     // Simulate Neural Sync/Initial Loading Sequence
@@ -346,7 +392,8 @@ const App = () => {
           user_id: 1001,
           format_type: formatType,
           refinement_instructions: instructions || "",
-          previous_prompt: prevPrompt || ""
+          previous_prompt: prevPrompt || "",
+          model: selectedModel
         })
       });
 
@@ -409,6 +456,30 @@ const App = () => {
     } catch (err) {
       console.error('Failed to copy text: ', err);
       alert('Failed to copy to clipboard.');
+    }
+  };
+
+  const exportJSON = () => {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(messages, null, 2));
+    const downloadAnchorElement = document.createElement('a');
+    downloadAnchorElement.setAttribute("href", dataStr);
+    downloadAnchorElement.setAttribute("download", "prompt_session_export.json");
+    document.body.appendChild(downloadAnchorElement);
+    downloadAnchorElement.click();
+    downloadAnchorElement.remove();
+  };
+
+  const handleFeedback = async (messageId, rating) => {
+    // update UI optimistically
+    setMessages(prev => prev.map(m => m.id === messageId ? { ...m, feedback: rating } : m));
+    try {
+      await fetch('/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message_id: String(messageId), feedback: rating, prompt_text: messages.find(m => m.id === messageId)?.text || '' })
+      });
+    } catch (e) {
+      console.error(e);
     }
   };
 
@@ -478,11 +549,11 @@ const App = () => {
           <a className="flex items-center gap-4 px-6 py-4 bg-surface-variant text-on-surface rounded-xl border border-white/[0.05] shadow-lg transition-all duration-300" href="#">
             <span className="text-[10px] font-black uppercase tracking-[0.2em]">Workshop</span>
           </a>
-          <a className="flex items-center gap-4 px-6 py-4 text-on-surface-variant hover:bg-surface-variant/50 hover:text-on-surface rounded-xl transition-all duration-300 group" href="#" onClick={(e) => { e.preventDefault(); setShowConstruction(true); }}>
-            <span className="text-[10px] font-black uppercase tracking-[0.2em] opacity-60 group-hover:opacity-100 transition-opacity">History</span>
+          <a className="flex items-center gap-4 px-6 py-4 text-on-surface-variant hover:bg-surface-variant/50 hover:text-on-surface rounded-xl transition-all duration-300 group" href="#" onClick={(e) => { e.preventDefault(); setShowDatasetExplorer(true); }}>
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] opacity-60 group-hover:opacity-100 transition-opacity">Dataset Explorer</span>
           </a>
-          <a className="flex items-center gap-4 px-6 py-4 text-on-surface-variant hover:bg-surface-variant/50 hover:text-on-surface rounded-xl transition-all duration-300 group" href="#" onClick={(e) => { e.preventDefault(); setShowConstruction(true); }}>
-            <span className="text-[10px] font-black uppercase tracking-[0.2em] opacity-60 group-hover:opacity-100 transition-opacity">Templates</span>
+          <a className="flex items-center gap-4 px-6 py-4 text-on-surface-variant hover:bg-surface-variant/50 hover:text-on-surface rounded-xl transition-all duration-300 group" href="#" onClick={(e) => { e.preventDefault(); exportJSON(); }}>
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] opacity-60 group-hover:opacity-100 transition-opacity">Export JSON</span>
           </a>
           <a className="flex items-center gap-4 px-6 py-4 text-on-surface-variant hover:bg-surface-variant/50 hover:text-on-surface rounded-xl transition-all duration-300 group" href="#" onClick={(e) => { e.preventDefault(); setShowConstruction(true); }}>
             <span className="text-[10px] font-black uppercase tracking-[0.2em] opacity-60 group-hover:opacity-100 transition-opacity">Settings</span>
@@ -564,6 +635,16 @@ const App = () => {
                         </button>
                       ))}
                     </div>
+
+                    <select
+                      value={selectedModel}
+                      onChange={(e) => setSelectedModel(e.target.value)}
+                      className="bg-surface-variant/40 border border-white/[0.05] text-on-surface text-[8px] md:text-[9px] font-black uppercase tracking-widest rounded-lg px-2 py-1.5 focus:outline-none"
+                    >
+                      <option value="phi3">Ollama Phi-3</option>
+                      <option value="llama3">Ollama Llama-3</option>
+                      <option value="mistral">Ollama Mistral</option>
+                    </select>
                   </div>
                   <button
                     onClick={() => handleSend()}
@@ -641,13 +722,20 @@ const App = () => {
                             {msg.type}
                           </span>
                         </div>
-                        <button
-                          onClick={() => copyToClipboard(msg.id, msg.text)}
-                          className={`flex items-center gap-2 text-[10px] font-bold bg-surface-container-highest px-4 py-2 rounded-lg nm-flat nm-button-active transition-colors h-fit ${copiedId === msg.id ? 'text-green-500' : `hover:text-${msg.color}`}`}
-                        >
-                          <span className="material-symbols-outlined text-xs">{copiedId === msg.id ? 'check' : 'content_copy'}</span>
-                          {copiedId === msg.id ? 'COPIED!' : 'COPY'}
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => copyToClipboard(msg.id, msg.text)}
+                            className={`flex items-center gap-2 text-[10px] font-bold bg-surface-container-highest px-4 py-2 rounded-lg nm-flat nm-button-active transition-colors h-fit ${copiedId === msg.id ? 'text-green-500' : `hover:text-${msg.color}`}`}
+                          >
+                            <span className="material-symbols-outlined text-xs">{copiedId === msg.id ? 'check' : 'content_copy'}</span>
+                            {copiedId === msg.id ? 'COPIED!' : 'COPY'}
+                          </button>
+                          <div className="flex bg-surface-container-highest rounded-lg px-2 py-1 nm-inset items-center h-fit">
+                            <button onClick={() => handleFeedback(msg.id, 1)} className={`material-symbols-outlined text-sm px-1 transition-colors ${msg.feedback === 1 ? 'text-green-500' : 'text-on-surface-variant hover:text-green-400'}`}>thumb_up</button>
+                            <span className="w-[1px] h-3 bg-white/10 mx-1"></span>
+                            <button onClick={() => handleFeedback(msg.id, -1)} className={`material-symbols-outlined text-sm px-1 transition-colors ${msg.feedback === -1 ? 'text-red-500' : 'text-on-surface-variant hover:text-red-400'}`}>thumb_down</button>
+                          </div>
+                        </div>
                       </div>
                       <div className="border border-white/[0.05] p-1 rounded-3xl bg-surface/40">
                         <div className="bg-surface-container-lowest p-4 md:p-8 rounded-[1.4rem]">
@@ -716,6 +804,9 @@ const App = () => {
         )}
         {showConstruction && (
           <ConstructionModal onClose={() => setShowConstruction(false)} />
+        )}
+        {showDatasetExplorer && (
+          <DatasetExplorer onClose={() => setShowDatasetExplorer(false)} />
         )}
       </AnimatePresence>
 

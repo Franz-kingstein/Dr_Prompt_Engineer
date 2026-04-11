@@ -19,11 +19,13 @@ class LocalOllamaModel(DeepEvalBaseLLM):
 
     def generate(self, prompt: str) -> str:
         try:
+            # Force JSON mode explicitly in the prompt
+            json_prompt = prompt + "\n\nCRITICAL: You MUST return ONLY a valid JSON object. Do not include any markdown backticks, explanations, or text outside the JSON structure."
             response = requests.post(
                 self.url,
                 json={
                     "model": self.model_name,
-                    "prompt": prompt,
+                    "prompt": json_prompt,
                     "stream": False,
                     "format": "json" # Force JSON output for DeepEval metrics
                 },
@@ -40,12 +42,14 @@ class LocalOllamaModel(DeepEvalBaseLLM):
     async def a_generate(self, prompt: str) -> str:
         import httpx
         try:
+            # Force JSON mode explicitly in the prompt
+            json_prompt = prompt + "\n\nCRITICAL: You MUST return ONLY a valid JSON object. Do not include any markdown backticks, explanations, or text outside the JSON structure."
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     self.url,
                     json={
                         "model": self.model_name,
-                        "prompt": prompt,
+                        "prompt": json_prompt,
                         "stream": False,
                         "format": "json" # Force JSON output for DeepEval metrics
                     },

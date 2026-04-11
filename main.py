@@ -18,6 +18,12 @@ import os
 import re
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
+try:
+    import chromadb
+    CHROMA_AVAILABLE = True
+except ImportError:
+    CHROMA_AVAILABLE = False
+
 # ============================================================
 # 🔀 Multi-Mode LLM Routing
 # ============================================================
@@ -71,13 +77,14 @@ DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "phi3")
     wait=wait_exponential(multiplier=1, min=2, max=10),
     retry=retry_if_exception_type((httpx.ConnectError, httpx.TimeoutException, httpx.RemoteProtocolError))
 )
-async def call_llm(prompt: str, span=None) -> str:
+async def call_llm(prompt: str, span=None, model: str = None) -> str:
     """Unified helper to call LLM based on OLLAMA_MODE (OpenAI/Groq or Ollama)."""
     current_url = get_ollama_url()
+    use_model = model or DEFAULT_MODEL
     if span:
         span.set_attribute("url", current_url)
         span.set_attribute("mode", OLLAMA_MODE)
-        span.set_attribute("model", DEFAULT_MODEL)
+        span.set_attribute("model", use_model)
 
     # ── Path A: API mode (OpenAI / Groq chat completions) ──
     if OLLAMA_MODE == "api":
@@ -111,7 +118,7 @@ async def call_llm(prompt: str, span=None) -> str:
             "User-Agent": "DrPromptAPI/1.0"
         }
         payload = {
-            "model": DEFAULT_MODEL,
+            "model": use_model,
             "prompt": prompt,
             "stream": False
         }
@@ -268,6 +275,37 @@ except Exception as e:
     print(f"❌ Feast initialization error: {e}")
     fs = None
 
+# Chroma Initialization for Template RAG
+try:
+    if CHROMA_AVAILABLE:
+        chroma_client = chromadb.PersistentClient(path="./data/chroma_db")
+        chroma_collection = chroma_client.get_or_create_collection(name="prompt_templates")
+        
+        # Add some initial templates if it's empty
+        if chroma_collection.count() == 0:
+            chroma_collection.add(
+                documents=[
+                    "Template for creating a clean React component.",
+                    "Template for building a robust FastAPI endpoint.",
+                    "Template for a moody, cinematic portrait photograph of a wolf.",
+                    "Template for writing a formal research paper abstract."
+                ],
+                metadatas=[
+                    {"task": "code", "framework": "RACE"},
+                    {"task": "code", "framework": "RACE"},
+                    {"task": "image", "framework": "CARE"},
+                    {"task": "document", "framework": "POST"}
+                ],
+                ids=["tpl-react", "tpl-fastapi", "tpl-wolf", "tpl-abstract"]
+            )
+        print("✅ ChromaDB Connected with semantic templates")
+    else:
+        chroma_collection = None
+        print("⚠️ ChromaDB not installed")
+except Exception as e:
+    print(f"❌ ChromaDB config error: {e}")
+    chroma_collection = None
+
 # -----------------------------
 # Request Schema
 # -----------------------------
@@ -279,7 +317,12 @@ class RequestBody(BaseModel):
     cot: bool = False
     refinement_instructions: str = ""  # New: instructions for refinement
     previous_prompt: str = ""          # New: the prompt being refined
+    model: str = ""                    # New: Dynamic model override
 
+class FeedbackBody(BaseModel):
+    message_id: str
+    feedback: int
+    prompt_text: str
 
 # -----------------------------
 # Framework Selector
@@ -318,11 +361,26 @@ def generate_prompt(task, user_input, cot=False, user_metadata=None, refinement_
         expertise = user_metadata.get("expertise_level", "Professional") or "Professional"
         lang = user_metadata.get("preferred_language", "multilingual") or "multilingual"
     
+    # Optional ChromaDB semantic search for similar templates
+    rag_context = ""
+    if chroma_collection:
+        try:
+            results = chroma_collection.query(
+                query_texts=[user_input],
+                n_results=1,
+                where={"task": task}
+            )
+            if results["documents"] and len(results["documents"][0]) > 0:
+                best_template = results["documents"][0][0]
+                rag_context = f"\nInclude elements from this highly-rated template style: {best_template}\n"
+        except Exception as e:
+            print(f"ChromaDB search failed: {e}")
+
     if task == "code":
         # Make it more general as requested
-        persona_suffix = f" You are a {expertise} level expert developer with high-level architectural oversight."
+        persona_suffix = f" You are a {expertise} level expert developer with high-level architectural oversight.{rag_context}"
     else:
-        persona_suffix = f" You are a {expertise} level expert."
+        persona_suffix = f" You are a {expertise} level expert.{rag_context}"
 
     # --- REFINEMENT MODE ---
     if previous_prompt and refinement_instructions:
@@ -582,6 +640,18 @@ def health():
     """Used by Render health checks. Returns 200 OK."""
     return {"status": "ok", "mode": OLLAMA_MODE, "model": DEFAULT_MODEL}
 
+@app.post("/feedback")
+def submit_feedback(req: FeedbackBody):
+    """RLHF feedback loop for rating generated prompts."""
+    # Log to MLflow
+    try:
+        with mlflow.start_run(run_name="HF_Feedback"):
+            mlflow.log_param("message_id", req.message_id)
+            mlflow.log_param("feedback", req.feedback)
+            mlflow.log_text(req.prompt_text, "prompt.txt")
+        return {"status": "success", "message": "Feedback recorded."}
+    except Exception as e:
+        return {"status": "failed", "message": str(e)}
 
 # -----------------------------
 # Prometheus Endpoint
@@ -690,9 +760,9 @@ async def generate(req: RequestBody, background_tasks: BackgroundTasks):
 
             try:
                 with mlflow.start_span(name=f"llm_call_attempt_{retries_used + 1}") as span:
-                    raw_output = await call_llm(prompt, span=span)
+                    raw_output = await call_llm(prompt, span=span, model=req.model)
                     status = "success"
-                    print(f"✅ LLM response received ({len(raw_output)} chars)")
+                    print(f"✅ LLM response received ({len(raw_output)} chars) using {req.model or DEFAULT_MODEL}")
 
 
             except Exception as e:

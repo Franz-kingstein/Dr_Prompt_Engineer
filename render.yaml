@@ -10,7 +10,7 @@ services:
     # Render auto-detects branch from repo connection
     branch: main
     # Set to false → Render deploys on every push automatically
-    autoDeploy: true
+    autoDeploy: false
 
     # Render injects PORT automatically; we expose on that port
     healthCheckPath: /metrics
